@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SFML/Graphics.hpp>
+#include <string>
 
 struct OrganicSettings
 {
@@ -20,4 +21,6 @@ struct renderingSettings
 	const unsigned int screenHeight;
 
 	const sf::Color windowColor;
+
+	std::string simulationName = "Biologial Evolution Simulation";
 };

@@ -16,4 +16,6 @@ int main()
 
 
 	Simulation simulation(simulationSettings, renderSettings);
+
+	simulation.run();
 }
