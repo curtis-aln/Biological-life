@@ -1,14 +1,5 @@
 #include "Simulation/Simulation.hpp"
 
-
-/*
- * Quality of life features
- * - different background colors every time (at least 20), keep them mundane so they contrast well
- * - simplistic patterns with vertex buffer such as circles inside of circles. this can be done by adding a feature for custom
- *   allocation / custom object creation
- *
- */
-
 /*
  * KEYBINDS
  * shift + c - center
@@ -30,7 +21,17 @@ int main()
 	// initilising random
 	std::srand(static_cast<unsigned>(time(nullptr)));
 
-	
+	// the color of the simulation is randomly determined by these colors:
+	constexpr unsigned colors = 6;
+	const sf::Color windowColors[colors] = {
+		{20, 30, 50},
+		{40, 29, 58},
+		{8, 12, 7},
+		{208, 196, 230},
+		{10, 32, 30},
+		{0, 0, 0},
+	};
+
 	const Settings settings(
 		300,
 		4000,
@@ -42,7 +43,7 @@ int main()
 		1000,
 		20,
 		30,
-		{ 20, 30, 50 },
+		windowColors[randint(0, colors-1)],
 		"Biologial Evolution Simulation",
 		"data.json",
 		{ 30 , 20 }
