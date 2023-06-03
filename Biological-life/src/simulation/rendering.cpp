@@ -24,7 +24,7 @@ void Simulation::pollEvents()
 
 		else if (event.type == sf::Event::MouseWheelScrolled)
 		{
-			zoom(beforeMousePos, event.mouseWheelScroll.delta);
+			zoom(event.mouseWheelScroll.delta);
 		}
 
 		else if (event.type == sf::Event::MouseButtonPressed)
@@ -44,7 +44,9 @@ void Simulation::printStatistics()
 {
 	std::cout << "-------------------------------------------------- " << ++updateCounter << "\n";
 	std::cout << "Min Speed   : " << roundToNearestN(min_speed, 3) << "\n";
-	std::cout << "Total Alive : " << m_allCells.size() << " Cells, " << m_allPlants.size() << " Plants" << "\n";
+	std::cout << "Min Nearby  : " << roundToNearestN(min_nearby, 3) << "\n";
+	std::cout << "Max Speed   : " << roundToNearestN(maxSpeed, 3) << "\n";
+	std::cout << "Total Alive : " << m_Cells.size() << " Cells, " << m_Plants.size() << " Plants" << "\n";
 	std::cout << "Total Frames: " << totalFrameCount << "\n";
 	std::cout << "Rel Frames  : " << relativeFrameCount << "\n";
 	std::cout << "Extinctions : " << totalExtinctions << "\n";
@@ -74,6 +76,12 @@ void Simulation::keyPressEvents(const sf::Keyboard::Key& event_key_code)
 		m_drawGrid = not m_drawGrid;
 		break;
 
+	case sf::Keyboard::Key::F:
+		m_frameByFrame = not m_frameByFrame;
+		m_paused = m_frameByFrame;
+		
+		break;
+
 	case sf::Keyboard::Key::V:
 		if (shifting)
 			m_debugVRangeToggle = not m_debugVRangeToggle;
@@ -94,9 +102,9 @@ void Simulation::keyPressEvents(const sf::Keyboard::Key& event_key_code)
 			m_debugCircToggle = not m_debugCircToggle;
 		break;
 
-	case sf::Keyboard::Key::Z:
+	case sf::Keyboard::Key::Q:
 		if (shifting)
-			m_debugZoneToggle = not m_debugZoneToggle;
+			m_debugBorder = not m_debugBorder;
 		break;
 
 	case sf::Keyboard::Key::N:
@@ -113,6 +121,7 @@ void Simulation::keyPressEvents(const sf::Keyboard::Key& event_key_code)
 		if (ctrl)
 			saveData();
 		break;
+
 
 	default:
 		break;
@@ -133,7 +142,10 @@ void Simulation::renderFrame()
 
 	// drawing grid
 	if (m_drawGrid)
-		m_window.draw(grid.m_renderGrid, getStates());
+		m_window.draw(m_hashGrid.m_renderGrid, getStates());
+
+	if (m_debugBorder)
+		drawRectOutline();
 
 	displayFrameRate(m_window, "Cellular Simulation", m_clock);
 	m_window.display();
@@ -142,21 +154,21 @@ void Simulation::renderFrame()
 
 void Simulation::debugEntities()
 {
-	for (const unsigned int index : m_allPlants.getAvalableIndexes())
+	for (const unsigned int index : m_Plants.getAvalableIndexes())
 	{
-		Plant& plant = m_allPlants.at(index);
+		Plant& plant = m_Plants.at(index);
 		debugEntity(plant, PlantSettings::visualRange, PlantSettings::initMass);
 	}
 
-	for (const unsigned int index : m_allCells.getAvalableIndexes())
+	for (const unsigned int index : m_Cells.getAvalableIndexes())
 	{
-		Cell& cell = m_allCells.at(index);
+		Cell& cell = m_Cells.at(index);
 		debugEntity(cell, CellSettings::visualRange, cell.getGenomeRadius());
 	}
 }
 
 
-void Simulation::debugEntity(Entity& entity, const float vrange, const float initRad)
+void Simulation::debugEntity(const Entity& entity, const float vrange, const float initRad)
 {
 	const float rad = debugCircle.getRadius();
 	const sf::Vector2f position = entity.getPosition();
@@ -180,9 +192,6 @@ void Simulation::debugEntity(Entity& entity, const float vrange, const float ini
 		debugCircleSize.setRadius(initRad);
 		m_window.draw(debugCircleSize, getStates());
 	}
-
-	if (m_debugZoneToggle)
-		m_window.draw(debugSimZone, getStates());
 
 	if (m_debugVelToggle)
 	{

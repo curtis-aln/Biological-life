@@ -146,7 +146,7 @@
     <ClInclude Include="src\buffer\Buffer.hpp" />
     <ClInclude Include="src\Life\cell.hpp" />
     <ClInclude Include="src\Life\entity.hpp" />
-    <ClInclude Include="src\Life\Plant.hpp" />
+    <ClInclude Include="src\Life\plant.hpp" />
     <ClInclude Include="src\Life\genome.hpp" />
     <ClInclude Include="src\simulation\o_vector.hpp" />
     <ClInclude Include="src\simulation\Simulation.hpp" />

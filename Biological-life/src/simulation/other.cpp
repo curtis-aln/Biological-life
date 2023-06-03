@@ -7,14 +7,14 @@ Simulation::Simulation(const Settings& settings)
 	: Settings(settings),
 	ZoomManagement(m_simBounds, scaleFactor),
 	m_buffer(maxCells + maxPlants, objectCirclePoints),
-	grid(m_simBounds, hashCells),
-	m_allCells(maxCells),
-	m_allPlants(maxPlants)
+	m_hashGrid(m_DesiredBounds, hashCells),
+	m_Cells(maxCells),
+	m_Plants(maxPlants)
 {
 
 	// changing the border to be one spatial cell inwards, this improves cashe hits as it removes boundary checks from the find() query
-	m_border = resizeRect(m_border, grid.m_cellDimensions);
-	m_simBounds = resizeRect(m_simBounds, grid.m_cellDimensions);
+	m_border = resizeRect(m_border, m_hashGrid.m_cellDimensions);
+	m_simBounds = resizeRect(m_simBounds, m_hashGrid.m_cellDimensions);
 
 	initLife();
 	initDebuging();
@@ -26,8 +26,8 @@ void Simulation::initLife()
 	if (minPlants > maxPlants)
 		minPlants = maxPlants;
 
-	m_allCells.reserve(maxCells);
-	m_allPlants.reserve(maxPlants);
+	m_Cells.reserve(maxCells);
+	m_Plants.reserve(maxPlants);
 
 	m_nearbyCells.reserve(static_cast<unsigned long long>(CollisionCell::cell_capacity) * 9);
 	m_nearbyPlants.reserve(static_cast<unsigned long long>(CollisionCell::cell_capacity) * 9);
@@ -55,24 +55,14 @@ void Simulation::initDebuging()
 	debugCircleSize.setOutlineColor({ 255, 0, 0 });
 	debugCircleSize.setOutlineThickness(.4f * scaleFactor);
 	debugCircleSize.setFillColor({ 0, 0, 0, 0 });
-
-	// zone to show what is in / out of bounds
-	debugSimZone.setPosition({ m_simBounds.left, m_simBounds.top });
-	debugSimZone.setSize({ m_simBounds.width, m_simBounds.height });
-	debugSimZone.setOutlineThickness(.4f * scaleFactor);
-	debugSimZone.setOutlineColor({ 255, 255, 255 });
-	debugSimZone.setFillColor({ 0, 0, 0, 0 });
-
-	// direction line to show velocity and displacement
-	debugDirectionLine.setFillColor({ 0, 0, 255 });
 }
 
 
 Entity Simulation::createEntity(const sf::Color color, const float radius)
 {
-	constexpr float buffer = 40.f;
+	constexpr float buffer = 400.f;//40.f;
 	const sf::Vector2f position = randPosInRect(resizeRect(m_simBounds, { buffer , buffer }));
-	Entity entity(m_buffer.add(position, radius), m_simBounds);
+	Entity entity(m_buffer.add(position, radius), &m_simBounds);
 
 	entity.setPosition(position);
 	m_buffer.setColor({ entity.indexes }, color);
@@ -85,7 +75,7 @@ void Simulation::createCells()
 	for (unsigned int i{ 0 }; i < maxCells; i++)
 	{
 		Genome genes{};
-		m_allCells.emplace(Cell{ createEntity(genes.getColor(), genes.getGenomeRadius()), genes });
+		m_Cells.emplace(Cell{ createEntity(genes.getColor(), genes.getGenomeRadius()), genes });
 	}
 }
 
@@ -97,7 +87,7 @@ void Simulation::createPlants()
 		const sf::Color color = Plant::generateColor();
 		Plant plant{ createEntity(color, PlantSettings::initMass), randfloat(0, 100) };
 		plant.color = color;
-		m_allPlants.emplace(plant);
+		m_Plants.emplace(plant);
 	}
 }
 
@@ -119,10 +109,10 @@ void Simulation::decodeEntityIds(std::vector<Cell*>& nearby_cells, std::vector<P
 	for (int32_t i{ 0 }; i < nearbyIds.size; i++)
 	{
 		if (const int32_t id = nearbyIds.array[i]; id > 0)
-			nearby_cells.emplace_back(&m_allCells.at(id - 1));
+			nearby_cells.emplace_back(&m_Cells.at(id - 1));
 
 		else if (id < 0)
-			nearby_plants.emplace_back(&m_allPlants.at(id * -1 - 1));
+			nearby_plants.emplace_back(&m_Plants.at(id * -1 - 1));
 	}
 }
 
@@ -144,16 +134,16 @@ void Simulation::overflowCheckEntities(o_vector<E>& entities, const unsigned int
 
 void Simulation::overflowProtection(const unsigned int maxcells, const unsigned int maxplants)
 {
-	overflowCheckEntities(m_allCells, maxcells, true);
-	overflowCheckEntities(m_allPlants, maxplants, false);
+	overflowCheckEntities(m_Cells, maxcells, true);
+	overflowCheckEntities(m_Plants, maxplants, false);
 }
 
 
 void Simulation::plantUnderflowProtection(const unsigned int minplants)
 {
-	while (m_allPlants.size() < minplants)
+	while (m_Plants.size() < minplants)
 	{
-		Plant* plant = m_allPlants.add();
+		Plant* plant = m_Plants.add();
 		plant->createRandom();
 		m_buffer.setVertexPositions({ plant->indexes }, plant->getDeltaPos());
 	}
@@ -163,16 +153,16 @@ void Simulation::plantUnderflowProtection(const unsigned int minplants)
 void Simulation::extinctionCheck()
 {
 	// validating that we should proceed
-	if (!autoExtinctionReset || m_allCells.size() > 0 || maxCells == 0 || initCellCount == 0)
+	if (!autoExtinctionReset || m_Cells.size() > 0 || maxCells == 0 || initCellCount == 0)
 		return;
 
 	// correctly re-sizing all entities
 	plantUnderflowProtection(initPlantCount);
-	overflowCheckEntities(m_allPlants, initPlantCount, false);
+	overflowCheckEntities(m_Plants, initPlantCount, false);
 
 	for (unsigned int i{0}; i < initCellCount; i++)
 	{
-		Cell* cell = m_allCells.add();
+		Cell* cell = m_Cells.add();
 
 		const sf::Vector2f chosenPosition = randPosInRect(m_simBounds);
 		const sf::Vector2f deltaPosition = chosenPosition - cell->getPosition();
@@ -209,11 +199,11 @@ void Simulation::bufferColorUpdate(const Allocations& entityAllocations, const s
 void Simulation::saveData()
 {
 	nlohmann::json entityData;
-	for (const unsigned index : m_allCells.getAvalableIndexes())
-		entityData.push_back(m_allCells.at(index).saveCellJson());
+	for (const unsigned index : m_Cells.getAvalableIndexes())
+		entityData.push_back(m_Cells.at(index).saveCellJson());
 
-	for (const unsigned index : m_allPlants.getAvalableIndexes())
-		entityData.push_back(m_allPlants.at(index).savePlantJson());
+	for (const unsigned index : m_Plants.getAvalableIndexes())
+		entityData.push_back(m_Plants.at(index).savePlantJson());
 
 
 
@@ -228,4 +218,28 @@ void Simulation::saveData()
 	std::ofstream ofs(fileReadWriteName);
 	ofs << simulationData.dump(3); // 4 is the number of spaces for indentation
 	ofs.close();
+}
+
+
+void Simulation::drawRectOutline()
+{
+	sf::VertexArray lines(sf::Lines, 8);
+
+	// Top line
+	lines[0].position = sf::Vector2f(m_simBounds.left, m_simBounds.top);
+	lines[1].position = sf::Vector2f(m_simBounds.left + m_simBounds.width, m_simBounds.top);
+
+	// Right line
+	lines[2].position = sf::Vector2f(m_simBounds.left + m_simBounds.width, m_simBounds.top);
+	lines[3].position = sf::Vector2f(m_simBounds.left + m_simBounds.width, m_simBounds.top + m_simBounds.height);
+
+	// Bottom line
+	lines[4].position = sf::Vector2f(m_simBounds.left + m_simBounds.width, m_simBounds.top + m_simBounds.height);
+	lines[5].position = sf::Vector2f(m_simBounds.left, m_simBounds.top + m_simBounds.height);
+
+	// Left line
+	lines[6].position = sf::Vector2f(m_simBounds.left, m_simBounds.top + m_simBounds.height);
+	lines[7].position = sf::Vector2f(m_simBounds.left, m_simBounds.top);
+
+	m_window.draw(lines, getStates());
 }

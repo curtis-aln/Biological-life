@@ -5,6 +5,10 @@
 #include <array>
 #include <nlohmann/json.hpp>
 
+#include <vector>
+#include <cmath>
+#include <random>
+
 class GenomeSettings
 {
 protected:
@@ -39,11 +43,6 @@ class Genome : GenomeSettings
 
     sf::Color m_color;
 
-    unsigned m_internalClock = 0;
-
-    // genetic code
-    unsigned int m_pointer = 0;
-    std::array<float, GeneticCodeCount> m_geneticCodes = {};
     
 
 public:
@@ -57,15 +56,6 @@ public:
     [[nodiscard]] float getRawMass() const   { return m_mass; }
 
 
-    float calculateInteration()
-	{
-        m_internalClock++;
-        if (m_internalClock % pointerDelay == 0) m_pointer++;
-        if (m_pointer >= m_geneticCodes.size() - 1) m_pointer = 0;
-
-        return m_geneticCodes[m_pointer];
-	}
-
 
 	static void createRandomMutations(Genome& genome)
 	{
@@ -74,19 +64,12 @@ public:
         genome.m_mass = randfloat(massR.x, massR.y);
         genome.m_maxSpeed = randfloat(speedR.x, speedR.y);
         genome.m_color = randColor();
-        randCodes(genome.m_geneticCodes);
+        genome.m_color.a = 85;
     }
 
 
     void createMutatedClone(Genome& genome) const
     {
-        // mutating genetic codes
-        for (unsigned int _{ 0 }; _ < CodeMutationCount; _++)
-        {
-            const size_t i = randint(0, static_cast<int>(genome.m_geneticCodes.size()) - 1);
-            genome.m_geneticCodes[i] = m_geneticCodes[i] + randMutation();
-        }
-
         // mutating mass and speed
         // TODO: dont forget to uncomment
         //genome.m_mass = m_mass + randMutation();
@@ -101,10 +84,7 @@ public:
             {"mass", m_mass},
             {"max speed", m_maxSpeed},
             {"mutation rate", m_mutationRate},
-            {"internal clock", m_internalClock},
-            {"m_pointer", m_pointer},
             {"color", {"r", m_color.r}, {"g", m_color.g}, {"b", m_color.b}},
-            {"codes", m_geneticCodes}
         };
 	}
 
@@ -121,7 +101,8 @@ private:
         return {
             static_cast<sf::Uint8>(m_color.r + randint(colorMR, -colorMR)),
             static_cast<sf::Uint8>(m_color.g + randint(colorMR, -colorMR)),
-            static_cast<sf::Uint8>(m_color.b + randint(colorMR, -colorMR))
+            static_cast<sf::Uint8>(m_color.b + randint(colorMR, -colorMR)),
+            85,
         };
     }
 
@@ -132,4 +113,82 @@ private:
             geneticCodes[i] = randfloat(geneticCodeR.x, geneticCodeR.y);
     }
 
+};
+
+
+
+
+class Perceptron
+{
+public:
+    // Constructor takes number of input nodes and number of output nodes
+    explicit Perceptron(const unsigned num_inputs, const unsigned num_outputs)
+        : m_numInputs(num_inputs), m_numOutputs(num_outputs)
+    {
+        // Initialize weights to random values between -1 and 1
+        m_weights.resize(m_numInputs * m_numOutputs);
+        for (unsigned i = 0; i < m_numInputs * m_numOutputs; ++i)
+            m_weights[i] = getRandWeight();
+
+        weightedOutputs.resize(m_numOutputs);
+    }
+
+    // Compute output of the perceptron for a given set of inputs
+    void compute_output(const std::vector<float>& inputs)
+    {
+        // Check that the number of inputs matches the number of weights
+        assert(inputs.size() == m_numInputs);
+
+        // Compute the weighted sum of the inputs for each output node
+        for (unsigned i = 0; i < m_numOutputs; ++i)
+        {
+            float weighted_sum = 0.f;
+            for (unsigned j = 0; j < m_numInputs; ++j)
+            {
+                const unsigned weight_idx = i * m_numInputs + j;
+                weighted_sum += inputs[j] * m_weights[weight_idx];
+            }
+
+            float output = 1.f / (1.f + exp(-weighted_sum));
+            // Scale the output value to the range [-1, 1]
+            output = 2.f * output - 1.f;
+            weightedOutputs[i] = output;
+        }
+    }
+
+    // Mutate the weights of the perceptron
+    void mutate(Perceptron& perceptronToMutate) const
+    {
+        // Iterate over the weights and mutate each one with a certain probability
+        for (unsigned i = 0; i < m_numInputs * m_numOutputs; ++i)
+        {
+            if (randfloat(0.f, 1.f) < m_mutationRate)
+                perceptronToMutate.m_weights[i] = m_weights[i] + getRandWeight() * m_mutationRange;
+        }
+    }
+
+    nlohmann::json saveNetworkJson()
+    {
+        return {
+        	{"num inputs", m_numInputs},
+            {"num outputs", m_numOutputs},
+            {"weights", m_weights}
+
+        };
+    }
+
+private:
+    static float getRandWeight() { return randfloat(-1.f, 1.f); }
+
+    const unsigned m_numInputs;    // Number of input nodes
+    const unsigned m_numOutputs;   // Number of output nodes
+    std::vector<float> m_weights;  // Weight values
+
+    const float m_mutationRate = 0.35f;
+    const float m_mutationRange = 0.5f;
+
+
+public:
+    // pre-making the output container
+    std::vector<float> weightedOutputs;
 };

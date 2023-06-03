@@ -20,8 +20,13 @@ struct PlantSettings
 
 protected:
 	inline static constexpr float growSpeed = 0.05f;
+
 	inline static constexpr float reproMass = 10;
 	inline static constexpr float reproAmount = 3;
+	inline static constexpr unsigned reproAge = 10'000;
+	inline static constexpr unsigned reproMinCollisions = 10;
+	inline static constexpr unsigned randDeathChance = 1000;
+
 	inline static constexpr float friction = 1.00f;
 	inline static constexpr float maxSpeed = .2f;
 	inline static constexpr float attractStrength = 0.0002f;
@@ -44,6 +49,8 @@ class Plant : public Entity, PlantSettings
 		collisionIndexes.size = 0;
 		if (nearbyPlants.empty())
 			return;
+
+		m_closestEntityPos = m_positionCurrent;
 
 		int incrementer = 0;
 		for (const Plant* plant : nearbyPlants)
@@ -78,14 +85,20 @@ public:
 
 	static sf::Color generateColor()
 	{
-		return randColor(0, 100, 180, 255, 0, 100);
+		sf::Color color = randColor(0, 100, 180, 255, 0, 100);
+		color.a = 150;
+		return color;
 	}
 
 	[[nodiscard]] sf::Color getColor() const {return color;}
 
-	void updatePositioning()
+	void updatePositioning() { updateDisplacement(); }
+
+
+	void moveToCenter()
 	{
-		updateDisplacement();
+		const sf::Vector2f center = { m_border->left + m_border->width / 2, m_border->top + m_border->height / 2 };
+		m_velocity += (center - m_positionCurrent) * 0.01f;
 	}
 
 
@@ -107,7 +120,8 @@ public:
 		this->reporoduce = false;
 		this->age = 0;
 
-		const sf::Vector2f pos = { m_positionCurrent.x + randfloat(-10.f, 10.f), m_positionCurrent.y + randfloat(-10.f, 10.f) };
+		constexpr float r = 10.f;
+		const sf::Vector2f pos = { m_positionCurrent.x + randfloat(-r, r), m_positionCurrent.y + randfloat(-r, r) };
 
 		plant->energy = plantEnergy;
 		plant->m_clippingDisplacement = pos - plant->m_positionCurrent;
@@ -125,7 +139,7 @@ public:
 	void createRandom()
 	{
 		energy = plantEnergy;
-		const sf::Vector2f desiredPosition = randPosInRect(m_border);
+		const sf::Vector2f desiredPosition = randPosInRect(*m_border);
 		m_clippingDisplacement += desiredPosition - m_positionCurrent;
 		m_velocity = randVector(-2, 2, -2, 2);
 		m_deltaPos = m_clippingDisplacement;
@@ -142,10 +156,10 @@ public:
 		}
 	}
 
-	void update(const float deltaTime, const std::vector<Plant*>& nearbyPlants)
+	void update(const std::vector<Plant*>& nearbyPlants)
 	{
 		interactWithNearby(nearbyPlants);
-
+		moveToCenter();
 		speed_limit(maxSpeed);
 		applyFriction(friction);
 		borderRepultion();
@@ -153,12 +167,12 @@ public:
 
 		processEntityCollisions(nearbyPlants);
 
-		if (age > 10'000 || collisionIndexes.size < 15)
+		if (age > reproAge && collisionIndexes.size < reproMinCollisions)
 			prepReproduction();
 
-		if (energy <= 0 || randint(0, 1000) == 420)
+		if (energy <= 0 || randint(0, randDeathChance) == 0)
 			die();
 
-		age += randint(0, 100);
+		age += randint(-10, 100);
 	}
 };

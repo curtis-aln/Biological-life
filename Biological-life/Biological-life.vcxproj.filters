@@ -41,7 +41,7 @@
     <ClInclude Include="src\Life\cell.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\Life\Plant.hpp">
+    <ClInclude Include="src\Life\plant.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\Life\genome.hpp">

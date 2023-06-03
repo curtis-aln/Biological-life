@@ -3,7 +3,7 @@
 #include "SFML/Graphics.hpp"
 
 #include "entity.hpp"
-#include "Plant.hpp"
+#include "plant.hpp"
 #include "genome.hpp"
 
 #include <nlohmann/json.hpp>
@@ -11,14 +11,16 @@
 
 struct CellSettings
 {
-	inline static constexpr float frictionCoefficient = 1.4f;
 	inline static constexpr float visualRange = 68;
 
 	// rate at which m_energy is transered from plant to cell
-	inline static constexpr float nutrienceRate = 2.f;
+	inline static constexpr float nutrienceRate = 5.f;
 
-	inline static constexpr int maxTimeAlone = 30;
+	inline static constexpr int maxTimeAlone = 60;
 	inline static constexpr int reproductionDelay = 40;
+
+	inline static constexpr int sensoryInputs = 7;
+	inline static constexpr int sensoryOutputs = 3;
 };
 
 
@@ -55,19 +57,19 @@ protected:
 };
 
 
-class Cell : public Entity, public Genome, CellSettings, EnergyManagement
+class Cell : public Entity, public Genome, CellSettings, EnergyManagement, Perceptron
 {
 	unsigned int m_timeAlone = 0;
 	unsigned int m_reproduceCounter = 0;
 
+	Cell* m_closestCell = nullptr;
+	Plant* m_closestPlant = nullptr;
+
+
 public:
 	// constructor and destructor
-	explicit Cell(const Entity& entity, const Genome& genome) : Entity(entity), Genome(genome)
+	explicit Cell(const Entity& entity, const Genome& genome) : Entity(entity), Genome(genome), Perceptron(sensoryInputs, sensoryOutputs)
 	{
-		// random initial velocity
-		const float speed = getSpeedMax();
-		m_velocity = randVector(-speed, speed, -speed, speed);
-
 		setEntityRadius(getGenomeRadius());
 	}
 
@@ -77,11 +79,22 @@ public:
 		setEnergy(initialEnergy);
 	}
 
+	void setClosestEntities(Cell* closestCell, Plant* closestPlant, const unsigned nearbyCells, const unsigned nearbyPlants)
+	{
+		m_closestCell = closestCell;
+		m_closestPlant = closestPlant;
+		m_nearbyCells = nearbyCells;
+		m_nearbyPlants = nearbyPlants;
+
+		setClosestPos();
+	}
+
 	nlohmann::json saveCellJson()
 	{
 		return {
 			{"entity data", saveEntityData()},
 			{"genome data", saveGenomeData()},
+			{"network data", saveNetworkJson()},
 			{"time alone", m_timeAlone},
 			{"reproduce counter", m_reproduceCounter},
 			{"radius", getRadius()},
@@ -107,40 +120,42 @@ public:
 		cell->setEnergy(getEnergy());
 		createMutatedClone(*cell);
 
+		mutate(*cell);
+
 		cell->updateDisplacement();
 	}
 
 
-
-	void update(const float deltaTime, Cell* closestCell, Plant* closestPlant)
+	void setClosestPos()
 	{
-		cellInteraction(closestCell);
+		if (validateEntityPtr(m_closestCell))
+			m_closestEntityPos = m_closestCell->getPosition();
+		else
+			m_closestEntityPos = m_positionCurrent;
+	}
+
+	void update()
+	{
+		cellInteraction();
+		plantInteraction();
 
 		speed_limit(getSpeedMax());
+		
+		applyFriction(1 + std::abs(weightedOutputs[2]));
 
-		// Resistance = K * (Speed^2) / Radius
-		const float speedSQ = m_velocity.x * m_velocity.x + m_velocity.y * m_velocity.y;
-		const float resitance = frictionCoefficient * speedSQ / getRadius();
-		applyFriction(1 + resitance);
-
-
-		if (closestCell != nullptr && !closestCell->isDead())
+		if (validateEntityPtr(m_closestCell))
 		{
-			if (entityCollision(closestCell))
-				energyDiffusion(*closestCell);
-			m_closestEntityPos = closestCell->getPosition();
+			if (entityCollision(m_closestCell))
+				energyDiffusion(*m_closestCell);
 		}
-		else
-		{
-			m_closestEntityPos = m_positionCurrent;
-		}
+		
 
-		if (closestPlant != nullptr && !closestPlant->isDead())
+		if (validateEntityPtr(m_closestPlant))
 		{
-			if (entityCollision(closestPlant))
+			if (entityCollision(m_closestPlant))
 			{
 				// transfuring nutrience
-				closestPlant->energy -= nutrienceRate;
+				m_closestPlant->energy -= nutrienceRate;
 				setEnergy(getEnergy() + nutrienceRate);
 			}
 		}
@@ -167,10 +182,13 @@ private:
 	{
 		if (m_timeAlone > maxTimeAlone || energyDeathCheck())
 			die();
+
+		if (m_reproduceCounter < reproductionDelay)
+			m_reproduceCounter++;
 		
 		if (reproCheck(getGenomeRadius()))
 		{
-			if (++m_reproduceCounter >= reproductionDelay)
+			if (m_reproduceCounter >= reproductionDelay)
 			{
 				prepReproduction();
 				m_reproduceCounter = 0;
@@ -178,18 +196,53 @@ private:
 		}
 	}
 
-
-	void cellInteraction(const Cell* closestCell)
+	void plantInteraction()
 	{
-		constexpr float minDist = (visualRange - 7) * (visualRange - 7);
-		if (closestCell == nullptr || distSquared(closestCell->getPosition(), getPosition()) > minDist)
-		{
-			m_timeAlone++;
+		if (!validateEntityPtr(m_closestPlant))
 			return;
+
+		const sf::Vector2f direction = m_closestPlant->getPosition() - this->getPosition();
+		m_velocity += direction * weightedOutputs[1]; // interaction with plant
+	}
+
+
+	void cellInteraction()
+	{
+		// validating that the rre is a cell nearby
+		if (!validateEntityPtr(m_closestCell)) {m_timeAlone++;return;}
+		const float Celldist = distSquared(m_closestEntityPos, getPosition());
+		if (Celldist > (visualRange - 7) * (visualRange - 7)) {m_timeAlone++; return;}
+		m_timeAlone = 0;
+
+		// calculations for the cell
+		const sf::Vector2f direction = m_closestEntityPos - this->getPosition();
+		const sf::Vector2f relCellDir = m_velocity - m_closestCell->getVelocity(); // relative speed
+		const float relCellSpeed = relCellDir.x * relCellDir.x + relCellDir.y * relCellDir.y;
+
+		// calculations for the plant
+		float relPlantSpeed = 0;
+		float PlantDist = 0;
+		if (validateEntityPtr(m_closestPlant))
+		{
+			const sf::Vector2f relPlantDir = m_velocity - m_closestPlant->getVelocity();
+			relPlantSpeed = relPlantDir.x * relPlantDir.x + relPlantDir.y * relPlantDir.y;
+			PlantDist = distSquared(m_closestPlant->getPosition(), getPosition());
 		}
 
-		m_timeAlone = 0;
-		const sf::Vector2f direction = closestCell->getPosition() - this->getPosition();
-		m_velocity += direction * this->calculateInteration();
+		// todo: optimize
+		// calculating the computational output
+		const std::vector inputs = {
+			std::sqrt(Celldist) / 100.f,        // cell distance squared
+			relCellSpeed / 10.f,    // moving towards or away (squared)
+			std::sqrt(PlantDist) / 100.f,
+			relPlantSpeed / 10.f,
+			getEnergy() / 100.f,     // our energy levels
+			static_cast<float>(m_nearbyCells) / 10.f,
+			static_cast<float>(m_nearbyPlants) / 10.f
+		};
+	
+		this->compute_output(inputs);
+
+		m_velocity += direction * weightedOutputs[0]; // interaction with cell
 	}
 };

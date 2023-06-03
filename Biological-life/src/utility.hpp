@@ -123,3 +123,16 @@ inline sf::VertexArray drawLine(const sf::Vector2f& point1, const sf::Vector2f& 
 	line[1].color = color;
 	return line;
 }
+
+
+inline std::string formatVariables(const std::vector<std::pair<std::string, double>>& variables) {
+	std::ostringstream oss;
+	oss.precision(2);
+	oss << std::fixed;
+	for (const auto& [fst, snd] : variables) {
+		oss << fst << ": " << snd << ", ";
+	}
+	const std::string result = oss.str();
+	// Remove the last comma and space
+	return result.substr(0, result.size() - 2);
+}

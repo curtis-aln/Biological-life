@@ -9,12 +9,6 @@
  * shift + z - zone
  */
 
-/*
- *
- * optimizations
- * 1. 1:13
- * 2. 
- */
 
 int main()
 {
@@ -22,27 +16,27 @@ int main()
 	std::srand(static_cast<unsigned>(time(nullptr)));
 
 	// the color of the simulation is randomly determined by these colors:
-	constexpr unsigned colors = 6;
+	constexpr unsigned colors = 2;
 	const sf::Color windowColors[colors] = {
 		{20, 30, 50},
 		{40, 29, 58},
-		{8, 12, 7},
-		{208, 196, 230},
-		{10, 32, 30},
-		{0, 0, 0},
+		//{8, 12, 7},
+		//{208, 196, 230},
+		//{10, 32, 30},
+		//{0, 0, 0},
 	};
 
 	const Settings settings(
-		300,
+		3000,
 		4000,
 		500,
 		true,
 		{ 1800, 1000 },
-		.27f,
-		4000,
-		1000,
+		.10f,
+		6'000,
+		3400,
 		20,
-		30,
+		1300,
 		windowColors[randint(0, colors-1)],
 		"Biologial Evolution Simulation",
 		"data.json",

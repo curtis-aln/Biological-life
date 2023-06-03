@@ -21,7 +21,7 @@ protected:
 	sf::Vector2f m_clippingDisplacement;
 	sf::Vector2f m_deltaPos;
 
-	const sf::Rect<float> m_border;
+	const sf::Rect<float>* m_border;
 
 	float m_entityRadius;
 
@@ -30,11 +30,16 @@ protected:
 
 
 public:
-	Entity(const Allocations& object, const sf::Rect<float> border)
+	unsigned m_nearbyCells = 0;
+	unsigned m_nearbyPlants = 0;
+
+	Entity(const Allocations& object, const sf::Rect<float>* border)
 	: Allocations(object), m_border(border)
 	{
 		
 	}
+
+	static bool validateEntityPtr(const Entity* entityPtr) { return entityPtr != nullptr && entityPtr->isDead() == false; }
 
 	[[nodiscard]] sf::Vector2f getPosition() const { return m_positionCurrent; }
 	[[nodiscard]] sf::Vector2f getClosestPos() const { return m_closestEntityPos; }
@@ -125,6 +130,17 @@ protected:
 		// Move the entities to prevent them from interpenetrating
 		m_clippingDisplacement -= correction * (thisRad / sum_radii);
 		entity->m_clippingDisplacement += correction * (otherRad / sum_radii);
+
+		if (m_clippingDisplacement.x > 100 || m_clippingDisplacement.y > 100)
+		{
+			const std::vector<std::pair<std::string, double>> variables = {
+				{"x", correction.x},
+				{"y", correction.y},
+				{"thisRad", thisRad},
+				{"sum_radii", sum_radii},
+				{"thisRad / sum_radii", thisRad / sum_radii}};
+			//std::cout << formatVariables(variables) << "\n";
+		}
 		return true;
 	}
 
@@ -134,8 +150,8 @@ protected:
 	{
 		const float radius = getRadius();
 		const sf::Vector2f desiredPos = {
-			std::max(m_border.left + radius, std::min(m_positionCurrent.x, m_border.left + m_border.width - radius)),
-			std::max(m_border.top + radius, std::min(m_positionCurrent.y, m_border.top + m_border.height - radius))
+			std::max(m_border->left + radius, std::min(m_positionCurrent.x, m_border->left + m_border->width - radius)),
+			std::max(m_border->top + radius, std::min(m_positionCurrent.y, m_border->top + m_border->height - radius))
 		};
 		m_clippingDisplacement += desiredPos - m_positionCurrent;
 	}
@@ -146,16 +162,16 @@ protected:
 		const float radius = getRadius();
 		constexpr float buffer = 30.f;
 		constexpr float repel = 0.02f;
-		if (m_border.left + radius + buffer > m_positionCurrent.x)
+		if (m_border->left + radius + buffer > m_positionCurrent.x)
 			m_velocity.x += repel;
 
-		else if (m_border.left + m_border.width - (radius + buffer) < m_positionCurrent.x)
+		else if (m_border->left + m_border->width - (radius + buffer) < m_positionCurrent.x)
 			m_velocity.x -= repel;
 
-		if (m_border.top + radius + buffer > m_positionCurrent.y)
+		if (m_border->top + radius + buffer > m_positionCurrent.y)
 			m_velocity.y += repel;
 
-		else if (m_border.top + m_border.height - (radius + buffer) < m_positionCurrent.y)
+		else if (m_border->top + m_border->height - (radius + buffer) < m_positionCurrent.y)
 			m_velocity.y -= repel;
 	}
 
@@ -176,7 +192,7 @@ protected:
 
 
 template <class T>
-T* filterAndProcessNearby(const sf::Vector2f position, std::vector<T*>& entities, const float visualRange, const float radius)
+T* filterAndProcessNearby(const sf::Vector2f position, std::vector<T*>& entities, const float visualRange, const float radius, unsigned& closeCounter)
 {
 	/* in this function we will find the closest cell to this current cell, while doing that we will also preform collision detection
 	 */
@@ -192,6 +208,8 @@ T* filterAndProcessNearby(const sf::Vector2f position, std::vector<T*>& entities
 
 		const float localDiam = radius + otherEntity->getRadius();
 		const float distSq = lengthSquared(otherPos - position) - (localDiam * localDiam);
+
+		if (distSq < visualRange * visualRange) closeCounter++;
 
 		if (distSq < closestDistSq)
 		{
