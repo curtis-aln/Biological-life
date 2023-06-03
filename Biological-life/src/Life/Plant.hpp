@@ -120,8 +120,8 @@ public:
 		this->reporoduce = false;
 		this->age = 0;
 
-		constexpr float r = 10.f;
-		const sf::Vector2f pos = { m_positionCurrent.x + randfloat(-r, r), m_positionCurrent.y + randfloat(-r, r) };
+		constexpr float va = 10.f;
+		const sf::Vector2f pos = m_positionCurrent + randVector(-va, va, -va, va);
 
 		plant->energy = plantEnergy;
 		plant->m_clippingDisplacement = pos - plant->m_positionCurrent;
@@ -139,11 +139,13 @@ public:
 	void createRandom()
 	{
 		energy = plantEnergy;
+
+		// setting the position of the plant
 		const sf::Vector2f desiredPosition = randPosInRect(*m_border);
-		m_clippingDisplacement += desiredPosition - m_positionCurrent;
-		m_velocity = randVector(-2, 2, -2, 2);
-		m_deltaPos = m_clippingDisplacement;
-		m_positionCurrent = desiredPosition;
+		m_velocity = { 0.f, 0.f };
+		updatePositionWithVelocity();
+		m_clippingDisplacement = desiredPosition - m_positionCurrent;
+		updateDisplacement();
 	}
 
 
@@ -163,7 +165,7 @@ public:
 		speed_limit(maxSpeed);
 		applyFriction(friction);
 		borderRepultion();
-		updatePosition();
+		updatePositionWithVelocity();
 
 		processEntityCollisions(nearbyPlants);
 

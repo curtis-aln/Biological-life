@@ -64,7 +64,7 @@ Entity Simulation::createEntity(const sf::Color color, const float radius)
 	const sf::Vector2f position = randPosInRect(resizeRect(m_simBounds, { buffer , buffer }));
 	Entity entity(m_buffer.add(position, radius), &m_simBounds);
 
-	entity.setPosition(position);
+	entity.setEntityPosition(position);
 	m_buffer.setColor({ entity.indexes }, color);
 	return entity;
 }
@@ -166,8 +166,8 @@ void Simulation::extinctionCheck()
 
 		const sf::Vector2f chosenPosition = randPosInRect(m_simBounds);
 		const sf::Vector2f deltaPosition = chosenPosition - cell->getPosition();
-		cell->setPosition(chosenPosition);
-		cell->createRandomMutations(*cell);
+		cell->setEntityPosition(chosenPosition);
+		Cell::createRandomMutations(*cell);
 
 		bufferPosUpdate({ cell->indexes }, deltaPosition);
 		bufferColorUpdate({ cell->indexes }, cell->getColor());

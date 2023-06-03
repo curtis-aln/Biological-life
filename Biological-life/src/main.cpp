@@ -27,16 +27,17 @@ int main()
 	};
 
 	const Settings settings(
-		3000,
-		4000,
+		2'000,
+		3'000,
 		500,
 		true,
+		false,
 		{ 1800, 1000 },
-		.10f,
-		6'000,
-		3400,
+		.12f,
+		13'000,
+		4'000,
 		20,
-		1300,
+		500,
 		windowColors[randint(0, colors-1)],
 		"Biologial Evolution Simulation",
 		"data.json",

@@ -105,14 +105,6 @@ private:
             85,
         };
     }
-
-
-    static void randCodes(std::array<float, GeneticCodeCount>& geneticCodes)
-    {
-        for (unsigned int i{0}; i < GeneticCodeCount; i++)
-            geneticCodes[i] = randfloat(geneticCodeR.x, geneticCodeR.y);
-    }
-
 };
 
 
@@ -185,7 +177,7 @@ private:
     std::vector<float> m_weights;  // Weight values
 
     const float m_mutationRate = 0.35f;
-    const float m_mutationRange = 0.5f;
+    const float m_mutationRange = 0.1f;
 
 
 public:

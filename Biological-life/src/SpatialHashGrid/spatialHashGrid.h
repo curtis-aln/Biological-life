@@ -117,7 +117,7 @@ struct SpatialHashGrid
 		const sf::Vector2<uint32_t> cIdx = posTo2dIdx(pos);
 
 		if (!checkValidIndex(cIdx))
-			throw std::out_of_range("find() position argument out of range");
+			throw std::out_of_range("position argument out of range");
 
 		const uint32_t idx = idx2dTo1d(cIdx);
 		m_cells[idx].addAtom(atom);

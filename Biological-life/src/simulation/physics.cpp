@@ -5,7 +5,10 @@ void Simulation::run()
 {
 	while (!m_closeSim)
 	{
-		runFrame(GetDelta());
+		const double deltaTime = GetDelta();
+
+		runFrame(deltaTime);
+		endFrame(deltaTime);
 		renderFrame();
 	}
 }
@@ -21,18 +24,18 @@ void Simulation::runFrame(const double deltaTime)
 		addAndRemoveEntities(m_Plants, false);
 
 		updatePlants();
+		prepareCells();
+
 		updateCells();
 
 		overflowProtection(maxCells, maxPlants); // bug: bottleneck
 		plantUnderflowProtection(minPlants);
 		extinctionCheck();
 
-		if ((totalFrameCount % 1000) == 0)
+		if ((totalFrameCount % 2500) == 0)
 			alignEntites(m_Cells);
 
 		m_buffer.update();
-
-		endFrame(deltaTime);
 	}
 }
 
@@ -47,20 +50,18 @@ void Simulation::endFrame(const double deltaTime)
 	totalRunTime += deltaTime;
 	
 	// growing the world size to a less dense area
-	if (m_simBounds.left - m_DesiredBounds.left > 1)
+	if (m_simBounds.left - m_DesiredBounds.left > m_hashGrid.m_cellDimensions.x)
 		m_simBounds = resizeRect(m_simBounds, { -0.014f, -0.014f });
 
 	// printing simulation statistics every 1000 frames
-	if (totalFrameCount % 1000 == 0 && !m_paused)
+	if (totalFrameCount % 1'000 == 0 && !m_paused)
 		printStatistics();
-
-	
-
 }
 
 template<class E>
 void Simulation::alignEntites(o_vector<E>& entities)
 {
+	/* entities offen fall out of sync with their display and real position so it is nessesery to re-align them every now and then */
 	for (const unsigned int index : entities.getAvalableIndexes())
 	{
 		E& entity = entities.at(index);
@@ -96,49 +97,56 @@ void Simulation::updatePlants()
 
 		m_nearbyCells.clear();
 		m_nearbyPlants.clear();
-
 		decodeEntityIds(m_nearbyCells, m_nearbyPlants, m_hashGrid.find(plant.getPosition()));
 
 		plant.update(m_nearbyPlants);
 	}
 
-	positionAlignment(m_Plants);
+	updateEntityPosition(m_Plants);
 }
 
-void Simulation::updateCells()
+
+void Simulation::prepareCells()
 {
 	// this iteration updates all of the positions of the cells
 	for (const unsigned int index : m_Cells.getAvalableIndexes())
 	{
 		Cell& cell = m_Cells.at(index);
 
+		// clearing the recycled containers and filling them with new entities
 		m_nearbyCells.clear();
 		m_nearbyPlants.clear();
-
 		decodeEntityIds(m_nearbyCells, m_nearbyPlants, m_hashGrid.find(cell.getPosition()));
 
-		// todo: experiment with this
-		if (m_nearbyCells.size() >= c_Vec::max / 4)
+		// crouding death check
+		if (cellCroudingDeath && m_nearbyCells.size() >= c_Vec::max / 4)
 			cell.die();
 
+		// getting entity information
 		unsigned nearbyCellCount = 0;
 		unsigned nearbyPlantCount = 0;
-
 		Cell* closestCell = filterAndProcessNearby(cell.getPosition(), m_nearbyCells, CellSettings::visualRange, cell.getGenomeRadius(), nearbyCellCount);
-		Plant* closestPlant = filterAndProcessNearby(cell.getPosition(), m_nearbyPlants , PlantSettings::visualRange, cell.getGenomeRadius(), nearbyPlantCount);
+		Plant* closestPlant = filterAndProcessNearby(cell.getPosition(), m_nearbyPlants, PlantSettings::visualRange, cell.getGenomeRadius(), nearbyPlantCount);
+
+		// setting the information in the cell to be used for later
 		cell.setClosestEntities(closestCell, closestPlant, nearbyCellCount, nearbyPlantCount);
 	}
+}
 
+
+void Simulation::updateCells()
+{
 	for (const unsigned int index : m_Cells.getAvalableIndexes())
 	{
 		m_Cells.at(index).update();
 	}
 
-	positionAlignment(m_Cells);
+	updateEntityPosition(m_Cells);
 }
 
+
 template<class E>
-void Simulation::positionAlignment(o_vector<E>& entities)
+void Simulation::updateEntityPosition(o_vector<E>& entities)
 {
 	for (const unsigned int index : entities.getAvalableIndexes())
 	{
@@ -155,21 +163,7 @@ void Simulation::addAndRemoveEntities(o_vector<E>& entities, const bool isCell) 
 	for (const unsigned int index : entities.getAvalableIndexes())
 	{
 		E& entity = entities.at(index);
-
-		bool otherDeath = false;
-		if (isCell == true)
-		{
-			const sf::Vector2f vel = entity.getVelocity();
-			const float speedSq = vel.x * vel.x + vel.y * vel.y;
-
-			//bool cond1 = entity.m_nearbyCells > 2 && randint(0, 200) == 69;// || entity.m_nearbyCells < 2; //(speedSq < min_speed * min_speed) && (totalFrameCount % 20) == 0;
-			//bool cond2 = false;// (entity.m_nearbyCells + entity.m_nearbyPlants < min_nearby) && (randint(0, 100) == 5);
-
-			//otherDeath = speedSq > maxSpeed * maxSpeed && randint(0, 15) == 3;
-			//if (cond1 || cond2) otherDeath = true;
-		}
-		
-		if (entity.isDead() || otherDeath)
+		if (entity.isDead())
 		{
 			entity.wipeData();
 			removeEntity(entity, index, isCell);
@@ -191,7 +185,7 @@ void Simulation::removeEntity(Entity& entity, const unsigned relativeIndex, cons
 	
 	const sf::Vector2f deathPos = { -100.f, -100.f };
 	const sf::Vector2f deltaPos = deathPos - entity.getPosition();
-	entity.setPosition(deathPos);
+	entity.setEntityPosition(deathPos);
 	bufferPosUpdate({ entity.indexes }, deltaPos);
 }
 

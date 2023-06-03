@@ -41,15 +41,15 @@ public:
 
 	static bool validateEntityPtr(const Entity* entityPtr) { return entityPtr != nullptr && entityPtr->isDead() == false; }
 
-	[[nodiscard]] sf::Vector2f getPosition() const { return m_positionCurrent; }
-	[[nodiscard]] sf::Vector2f getClosestPos() const { return m_closestEntityPos; }
-	[[nodiscard]] sf::Vector2f getVelocity() const { return m_positionCurrent - m_positionBefore; }
-	[[nodiscard]] sf::Vector2f  getDeltaPos() const { return m_deltaPos; }
-	[[nodiscard]] sf::Vector2f  getDisplacement() const { return m_clippingDisplacement; }
+	[[nodiscard]] sf::Vector2f getPosition()     const { return m_positionCurrent; }
+	[[nodiscard]] sf::Vector2f getClosestPos()   const { return m_closestEntityPos; }
+	[[nodiscard]] sf::Vector2f getVelocity()     const { return m_positionCurrent - m_positionBefore; }
+	[[nodiscard]] sf::Vector2f getDeltaPos()     const { return m_deltaPos; }
+	[[nodiscard]] sf::Vector2f getDisplacement() const { return m_clippingDisplacement; }
 	[[nodiscard]] bool isDead() const { return dead; }
 	[[nodiscard]] bool shouldReproduce() const { return reporoduce; }
 
-	void setPosition(const sf::Vector2f newPosition)
+	void setEntityPosition(const sf::Vector2f newPosition)
 	{
 		m_positionBefore = newPosition;
 		m_positionCurrent = newPosition;
@@ -57,19 +57,20 @@ public:
 	}
 
 	void setEntityRadius(const float radius) { m_entityRadius = radius; }
-	float getRadius() const { return m_entityRadius; }
+	void die() { dead = true; }
+	[[nodiscard]] float getRadius() const { return m_entityRadius; }
 
 
 	nlohmann::json saveEntityData()
 	{
 		return {
 			{"position before", {"x", m_positionBefore.x, "y", m_positionBefore.y}},
-			{"position current", {"x", m_positionCurrent.x, "y", m_positionCurrent.y}},
-			{"velocity", {"x", m_velocity.x, "y", m_velocity.y}},
+			{"position current",{"x", m_positionCurrent.x,"y", m_positionCurrent.y}},
+			{"velocity",        {"x", m_velocity.x,       "y", m_velocity.y}},
 		};
 	}
 
-	void die() { dead = true; }
+	
 
 protected:
 	unsigned int age = 0;
@@ -84,8 +85,9 @@ protected:
 	}
 
 	void prepReproduction() { reporoduce = true; }
+	void applyFriction(const float strength) { m_velocity /= strength; }
 
-	void updatePosition()
+	void updatePositionWithVelocity()
 	{
 		m_positionBefore = m_positionCurrent;
 		m_positionCurrent += m_velocity;
@@ -102,12 +104,6 @@ protected:
 
 		m_deltaPos = m_velocity + originalDisp + deltaDisp;
 		m_clippingDisplacement = { 0, 0 };
-	}
-
-
-	void applyFriction(const float strength)
-	{
-		m_velocity /= strength;
 	}
 
 

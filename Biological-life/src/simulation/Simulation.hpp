@@ -20,6 +20,7 @@ struct Settings
 	const unsigned int FrameRate;
 
 	const bool autoExtinctionReset;
+	const bool cellCroudingDeath = false;
 
 	// graphical settings
 	sf::Vector2f windowSize;
@@ -68,7 +69,7 @@ class Simulation : Settings, DeltaTime, ZoomManagement
 
 	// in the simulation we will slowly change the simbounds to a more scarce environment
 	sf::Rect<float> m_DesiredBounds{ 0, 0, windowSize.x / scaleFactor, windowSize.y / scaleFactor };
-	const float buffer = 2700.f;
+	const float buffer = 3000.f;
 	sf::Rect<float> m_simBounds = resizeRect(m_DesiredBounds, {buffer, buffer});
 
 
@@ -133,16 +134,17 @@ public:
 
 private: // physics
 	void runFrame(double deltaTime);
-	void updateNaturalSelections();
+	void endFrame(double deltaTime);
 	void prepGrid();
 
 	void saveData();
 	void drawRectOutline();
 
 	void updatePlants();
-	void bufferPosUpdate(const Allocations& entityAllocations, const sf::Vector2f deltaPos);
+	void bufferPosUpdate(const Allocations& entityAllocations, sf::Vector2f deltaPos);
 	void bufferColorUpdate(const Allocations& entityAllocations, sf::Color newColor);
 	
+	void prepareCells();
 	void updateCells();
 	void removeEntity(Entity& entity, unsigned relativeIndex, bool type);
 
@@ -150,7 +152,7 @@ private: // physics
 	void alignEntites(o_vector<E>& entities);
 
 	template <class E>
-	void positionAlignment(o_vector<E>& entities);
+	void updateEntityPosition(o_vector<E>& entities);
 
 	template <class E>
 	bool addEntity(o_vector<E>& entities, E& entity, bool isCell);
@@ -166,7 +168,7 @@ private: // rendering
 	void renderFrame();
 
 	void debugEntities();
-	void debugEntity(const Entity& entity, const float vrange, const float initRad);
+	void debugEntity(const Entity& entity, float vrange, float initRad);
 
 
 private: // other

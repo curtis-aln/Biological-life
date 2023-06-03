@@ -76,6 +76,10 @@ void Simulation::keyPressEvents(const sf::Keyboard::Key& event_key_code)
 		m_drawGrid = not m_drawGrid;
 		break;
 
+	case sf::Keyboard::Key::B:
+		m_debugBorder = not m_debugBorder;
+		break;
+
 	case sf::Keyboard::Key::F:
 		m_frameByFrame = not m_frameByFrame;
 		m_paused = m_frameByFrame;
@@ -97,14 +101,9 @@ void Simulation::keyPressEvents(const sf::Keyboard::Key& event_key_code)
 			m_debugCenterToggle = not m_debugCenterToggle;
 		break;
 
-	case sf::Keyboard::Key::B:
+	case sf::Keyboard::Key::H:
 		if (shifting)
 			m_debugCircToggle = not m_debugCircToggle;
-		break;
-
-	case sf::Keyboard::Key::Q:
-		if (shifting)
-			m_debugBorder = not m_debugBorder;
 		break;
 
 	case sf::Keyboard::Key::N:
