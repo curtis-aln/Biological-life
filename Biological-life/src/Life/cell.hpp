@@ -5,40 +5,31 @@
 #include "entity.hpp"
 #include "plant.hpp"
 #include "genome.hpp"
+#include "../settings.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <boost/functional/hash.hpp>
+#include <vector>
 
-struct CellSettings
-{
-	inline static constexpr float visualRange = 68;
 
-	// rate at which m_energy is transered from plant to cell
-	inline static constexpr float nutrienceRate = 5.f;
-
-	inline static constexpr int maxTimeAlone = 60;
-	inline static constexpr int reproductionDelay = 40;
-
-	inline static constexpr int sensoryInputs = 7;
-	inline static constexpr int sensoryOutputs = 3;
-};
 
 
 class EnergyManagement
 {
 private:
-	static constexpr float K = 0.00067f;
+	static constexpr float K = 0.00054f;
 	static constexpr float reproThresh = 100.f;
-	static constexpr float diffusion = 0.01f;
 	float m_energy = initialEnergy;
 	
 protected:
 	static constexpr float initialEnergy = 50.f;
 
-	void updateEnergy(const sf::Vector2f velocity, const float mass, const unsigned int age)
+	void updateEnergy(const sf::Vector2f velocity, const float mass, const unsigned age, const unsigned nearby)
 	{
 		const float speed = abs(velocity.x) + abs(velocity.y);
-		const float deltaEnergy = (mass + speed + (static_cast<float>(age) * 0.02f)) * K;
+		const float a_age = static_cast<float>(age) * 0.01f;
+		const float deltaEnergy = (mass + speed + a_age) * K;
 		m_energy -= deltaEnergy;
 	}
 
@@ -48,43 +39,106 @@ protected:
 
 	void setEnergy(const float newEnergy) { m_energy = newEnergy; }
 
-	void energyDiffusion(EnergyManagement& otherSystem)
+	void energyDiffusion(EnergyManagement& otherSystem, const float diffusion)
 	{
 		const float delta = (otherSystem.m_energy - this->m_energy) * diffusion;
 		this->m_energy += delta;
 		otherSystem.m_energy -= delta;
+
+		if (this->m_energy < 0)
+		{
+			otherSystem.m_energy -= std::abs(this->m_energy);
+			this->m_energy = -0.1f;
+			otherSystem.m_energy += 0.1f;
+		}
+
+		else if (otherSystem.m_energy < 0)
+		{
+			this->m_energy -= std::abs(otherSystem.m_energy);
+			otherSystem.m_energy = -0.1f;
+			this->m_energy += 0.1f;
+		}
 	}
 };
 
 
 class Cell : public Entity, public Genome, CellSettings, EnergyManagement, Perceptron
 {
-	unsigned int m_timeAlone = 0;
-	unsigned int m_reproduceCounter = 0;
-	unsigned int m_offspringCount = 0;
+	unsigned m_timeAlone = 0;
+	unsigned m_reproduceCounter = 0;
 
 	Cell* m_closestCell = nullptr;
 	Plant* m_closestPlant = nullptr;
 
+	float m_maxSpeed{};
+	float uniqueIdentifier{};
+
 
 public:
+	unsigned offspringCount = 0;
+	unsigned vector_id = 0;
+
 	// constructor and destructor
-	explicit Cell(const Entity& entity, const Genome& genome) : Entity(entity), Genome(genome), Perceptron(sensoryInputs, sensoryOutputs)
+	explicit Cell(const Entity& entity = {}, const Genome& genome = Genome(), const unsigned Vector_id = 0)
+	: Entity(entity), Genome(genome), Perceptron(sensoryInputs, numHiddenLayers, hiddenLayerSize, sensoryOutputs), vector_id(Vector_id)
 	{
-		setEntityRadius(getGenomeRadius());
+		setEntityRadius(m_entityRadius);
+		uniqueIdentifier = generateUniqueIdentifier(getInputHiddenWeights());
+	}
+
+	Cell& operator=(const Cell& other)
+	{
+		if (this == &other)
+			return *this;  // Check for self-assignment
+
+		Entity::operator=(other);
+		Perceptron::operator=(other);
+
+		m_timeAlone        = other.m_timeAlone;
+		m_reproduceCounter = other.m_reproduceCounter;
+		m_closestCell      = other.m_closestCell;
+		m_closestPlant     = other.m_closestPlant;
+		m_maxSpeed         = other.m_maxSpeed;
+		uniqueIdentifier   = other.uniqueIdentifier;
+		offspringCount     = other.offspringCount;
+		return *this;
 	}
 
 	void wipeData()
 	{
 		wipeEntityData();
 		setEnergy(initialEnergy);
+		offspringCount = 0;
+		m_reproduceCounter = 0;
+		m_timeAlone = 0;
 	}
+
+
+	bool thermalToggle(const bool thermalOn)
+	{
+		if (thermalOn)
+		{
+			const auto fit = static_cast<int>(getEnergy() * 2.f);
+			const auto col = static_cast<sf::Uint8>(std::max(0, std::min(255, fit)));
+			m_color = { col, col, col, 200 };
+			return true;
+
+		}
+
+		if (thermalOn == false && m_color != m_originalColor)
+		{
+			m_color = m_originalColor;
+			return true;
+		}
+		return false;
+	}
+
 
 	void setClosestEntities(Cell* closestCell, Plant* closestPlant, const unsigned nearbyCells, const unsigned nearbyPlants)
 	{
-		m_closestCell = closestCell;
+		m_closestCell  = closestCell;
 		m_closestPlant = closestPlant;
-		m_nearbyCells = nearbyCells;
+		m_nearbyCells  = nearbyCells;
 		m_nearbyPlants = nearbyPlants;
 
 		setClosestPos();
@@ -93,14 +147,25 @@ public:
 	nlohmann::json saveCellJson()
 	{
 		return {
-			{"entity data", saveEntityData()},
-			{"genome data", saveGenomeData()},
-			{"network data", saveNetworkJson()},
-			{"time alone", m_timeAlone},
+			{"entity data", saveEntityData()   },
+			{"network data", saveNetworkJson() },
+			{"time alone", m_timeAlone         },
 			{"reproduce counter", m_reproduceCounter},
-			{"radius", getRadius()},
-			{"m_energy", getEnergy()}
+			{"radius", getRadius() },
+			{"energy", getEnergy() }
 		};
+	}
+
+	void loadCellData(const nlohmann::json& cellData)
+	{
+		loadEntityData(cellData["entity data"]);
+		loadNetworkData(cellData["network data"]);
+		m_timeAlone        = cellData["time alone"];
+		m_reproduceCounter = cellData["reproduce counter"];
+		m_entityRadius     = cellData["radius"];
+		dead = false;
+
+		setEnergy(cellData["energy"]);
 	}
 
 
@@ -109,7 +174,7 @@ public:
 		// preparing this cell
 		setEnergy(getEnergy() / 2);
 		reporoduce = false;
-		m_offspringCount++;
+		offspringCount++;
 
 		constexpr float va = 3.f;
 		const sf::Vector2f pos = m_positionCurrent + randVector(-va, va, -va, va);
@@ -119,10 +184,12 @@ public:
 		cell->m_clippingDisplacement = (pos - cell->m_positionCurrent);
 		cell->setEnergy(getEnergy());
 
-		createMutatedClone(*cell);
+		cell->m_color = createMutatedColor(cell->m_color);
 		mutate(*cell);
 
 		cell->updateDisplacement();
+		cell->m_closestEntityPos = cell->m_positionCurrent;
+		cell->uniqueIdentifier = generateUniqueIdentifier(getInputHiddenWeights());
 	}
 
 
@@ -131,12 +198,13 @@ public:
 		cellInteraction();
 		plantInteraction();
 
-		speed_limit(getSpeedMax());
-		applyFriction(1 + std::abs(weightedOutputs[2]));
+		speed_limit(m_maxSpeed);
+		m_maxSpeed = weightedOutputs[2] * 10.f;
+		applyFriction(1 + std::abs(weightedOutputs[4]));
 		collisionManagement();
 
 		// end of function statistics update
-		updateEnergy(m_velocity, getRawMass(), age);
+		updateEnergy(m_velocity, m_entityRadius, age, m_nearbyCells);
 		reproOrDeathCheck();
 		age++;
 	}
@@ -158,6 +226,9 @@ private:
 			m_closestEntityPos = m_closestCell->getPosition();
 		else
 			m_closestEntityPos = m_positionCurrent;
+
+		applyUpriciple(m_closestEntityPos.x);
+		applyUpriciple(m_closestEntityPos.y);
 	}
 
 	void collisionManagement()
@@ -165,7 +236,7 @@ private:
 		if (validateEntityPtr(m_closestCell))
 		{
 			if (entityCollision(m_closestCell))
-				energyDiffusion(*m_closestCell);
+				energyDiffusion(*m_closestCell, weightedOutputs[3]);
 		}
 
 
@@ -175,8 +246,8 @@ private:
 			if (entityCollision(m_closestPlant))
 			{
 				// transfer of nutrience upon contact
-				m_closestPlant->energy -= nutrienceRate;
-				setEnergy(getEnergy() + nutrienceRate);
+				m_closestPlant->energy -= energyTransferRate;
+				setEnergy(getEnergy() + energyTransferRate);
 			}
 		}
 	}
@@ -189,7 +260,7 @@ private:
 		if (m_reproduceCounter < reproductionDelay)
 			m_reproduceCounter++;
 		
-		if (reproCheck(getGenomeRadius()))
+		if (reproCheck(m_entityRadius))
 		{
 			if (m_reproduceCounter >= reproductionDelay)
 			{
@@ -208,13 +279,18 @@ private:
 		m_velocity += direction * weightedOutputs[1]; // interaction with plant
 	}
 
+	static void applyUpriciple(float& value)
+	{
+		value += randfloat(-0.055f, 0.055f);
+	}
+
 
 	void cellInteraction()
 	{
 		// cell validation
 		if (!validateEntityPtr(m_closestCell))    { m_timeAlone++; return; }
 		const float Celldist = distSquared(m_closestEntityPos, getPosition());
-		if (Celldist > (visualRange - 7) * (visualRange - 7))    { m_timeAlone++; return; }
+		if (Celldist > (visualRadius - 7) * (visualRadius - 7))    { m_timeAlone++; return; }
 		m_timeAlone = 0;
 
 		// calculations for the cell
@@ -241,18 +317,9 @@ private:
 			relPlantSpeed        / 5.f,   // direction to closest plant SQ
 			getEnergy()          / 100.f,  // energy levels
 			static_cast<float>(m_nearbyCells)  / 10.f, // cell count
-			static_cast<float>(m_nearbyPlants) / 10.f  // plant count
+			static_cast<float>(m_nearbyPlants) / 10.f,  // plant count
+			std::abs(m_closestCell->uniqueIdentifier - uniqueIdentifier) // similarity relation
 		};
-
-		//std::cout << formatVariables({
-		//	{"cell distance", inputs[0]},
-		//	{"rel cell speed", inputs[1]},
-		//	{"plant distance", inputs[2]},
-		//	{"rel plant speed", inputs[3]},
-		//	{"energy", inputs[4]},
-		//	{"nearby cells", inputs[5]},
-		//	{"nearby plants", inputs[6]},
-		//}) << "\n";
 	
 		this->compute_output(inputs);
 

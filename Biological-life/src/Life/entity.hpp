@@ -12,31 +12,56 @@ class Entity : public Allocations
 {
 
 protected:
-	sf::Vector2f m_positionBefore;
-	sf::Vector2f m_positionCurrent;
+	sf::Vector2f m_positionBefore{};
+	sf::Vector2f m_positionCurrent{};
 
 	sf::Vector2f m_closestEntityPos{};
 
-	sf::Vector2f m_velocity;
-	sf::Vector2f m_clippingDisplacement;
-	sf::Vector2f m_deltaPos;
+	sf::Vector2f m_velocity{};
+	sf::Vector2f m_clippingDisplacement{};
+	sf::Vector2f m_deltaPos{};
 
-	const sf::Rect<float>* m_border;
-
-	float m_entityRadius;
+	const sf::Rect<float>* m_border{};
+	float m_entityRadius{};
 
 	bool dead = false;
 	bool reporoduce = false;
+
+	// coloring
+	sf::Color m_color{};
+	sf::Color m_originalColor{};
 
 
 public:
 	unsigned m_nearbyCells = 0;
 	unsigned m_nearbyPlants = 0;
 
-	Entity(const Allocations& object, const sf::Rect<float>* border)
-	: Allocations(object), m_border(border)
+	Entity(const Allocations& object = {}, const sf::Rect<float>* border = {}, const sf::Color& color = {}, const float radius = 0)
+	: Allocations(object), m_border(border), m_entityRadius(radius), m_color(color), m_originalColor(color)
 	{
-		
+	}
+
+	Entity& operator=(const Entity& other)
+	{
+		if (this == &other)
+			return *this;  // Check for self-assignment
+
+		m_positionBefore   = other.m_positionBefore;
+		m_positionCurrent  = other.m_positionCurrent;
+		m_closestEntityPos = other.m_closestEntityPos;
+		m_velocity         = other.m_velocity;
+		m_clippingDisplacement = other.m_clippingDisplacement;
+		m_deltaPos     = other.m_deltaPos;
+		m_border       = other.m_border;
+		m_entityRadius = other.m_entityRadius;
+		dead           = other.dead;
+		reporoduce     = other.reporoduce;
+		m_color        = other.m_color;
+		m_originalColor= other.m_originalColor;
+		m_nearbyCells  = other.m_nearbyCells;
+		m_nearbyPlants = other.m_nearbyPlants;
+
+		return *this;
 	}
 
 	static bool validateEntityPtr(const Entity* entityPtr) { return entityPtr != nullptr && entityPtr->isDead() == false; }
@@ -59,26 +84,37 @@ public:
 	void setEntityRadius(const float radius) { m_entityRadius = radius; }
 	void die() { dead = true; }
 	[[nodiscard]] float getRadius() const { return m_entityRadius; }
+	[[nodiscard]] unsigned getAge() const { return age; }
+	[[nodiscard]] sf::Color getColor() const { return m_color; }
 
 
-	nlohmann::json saveEntityData()
+	[[nodiscard]] nlohmann::json saveEntityData() const
 	{
 		return {
-			{"position before", {"x", m_positionBefore.x, "y", m_positionBefore.y}},
-			{"position current",{"x", m_positionCurrent.x,"y", m_positionCurrent.y}},
-			{"velocity",        {"x", m_velocity.x,       "y", m_velocity.y}},
+			{"position before",  vectorToJson(m_positionBefore)},
+			{"position current", vectorToJson(m_positionCurrent)},
+			{"velocity",         vectorToJson(m_velocity)},
+			{"color", colorToJson(m_color)}
 		};
+	}
+
+	void loadEntityData(const nlohmann::json& entityData)
+	{
+		m_positionBefore = jsonToVector(entityData["position before"]);
+		m_positionCurrent= jsonToVector(entityData["position current"]);
+		m_velocity       = jsonToVector(entityData["velocity"]);
+		m_color          = jsonToColor(entityData["color"]);
 	}
 
 	
 
 protected:
-	unsigned int age = 0;
+	unsigned age = 0;
 
 	void wipeEntityData()
 	{
 		age = 0;
-		dead = false;
+		dead = true;
 		reporoduce = false;
 		m_velocity = { 0, 0 };
 		m_clippingDisplacement = { 0, 0 };
@@ -127,16 +163,6 @@ protected:
 		m_clippingDisplacement -= correction * (thisRad / sum_radii);
 		entity->m_clippingDisplacement += correction * (otherRad / sum_radii);
 
-		if (m_clippingDisplacement.x > 100 || m_clippingDisplacement.y > 100)
-		{
-			const std::vector<std::pair<std::string, double>> variables = {
-				{"x", correction.x},
-				{"y", correction.y},
-				{"thisRad", thisRad},
-				{"sum_radii", sum_radii},
-				{"thisRad / sum_radii", thisRad / sum_radii}};
-			//std::cout << formatVariables(variables) << "\n";
-		}
 		return true;
 	}
 

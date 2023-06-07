@@ -19,29 +19,30 @@ int main()
 	constexpr unsigned colors = 2;
 	const sf::Color windowColors[colors] = {
 		{20, 30, 50},
-		{40, 29, 58},
-		//{8, 12, 7},
-		//{208, 196, 230},
-		//{10, 32, 30},
-		//{0, 0, 0},
+		{40, 29, 58}
 	};
 
 	const Settings settings(
-		2'000,
+		1650,
 		3'000,
 		500,
+
 		true,
 		false,
+
+		2500,
+
 		{ 1800, 1000 },
-		.12f,
-		13'000,
-		4'000,
-		20,
-		500,
-		windowColors[randint(0, colors-1)],
+		0.100f,
+		2240,
+		windowColors[randint(0, colors - 1)],
 		"Biologial Evolution Simulation",
+
+		20,
+		1'000,
+
 		"data.json",
-		{ 30 , 20 }
+		{ 25 , 15 } // originally 30, 20
 	);
 
 	Simulation simulation(settings);

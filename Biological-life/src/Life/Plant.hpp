@@ -3,50 +3,25 @@
 #include "SFML/Graphics.hpp"
 
 #include "entity.hpp"
-
-/*
- * TODO:
- * in the future have different "Spicies" of Plant so that they only attract to plant that are similar in spicies,
- * have their similarity as a value that mutates over time so they become less and less similar causing them to be
- * repelled
- *
- */
-
-
-struct PlantSettings
-{
-	inline static constexpr float initMass = 8.f;
-	inline static constexpr float visualRange = initMass * 6.5f; // must be smaller than a grid cell
-
-protected:
-	inline static constexpr float growSpeed = 0.05f;
-
-	inline static constexpr float reproMass = 10;
-	inline static constexpr float reproAmount = 3;
-	inline static constexpr unsigned reproAge = 10'000;
-	inline static constexpr unsigned reproMinCollisions = 10;
-	inline static constexpr unsigned randDeathChance = 1000;
-
-	inline static constexpr float friction = 1.00f;
-	inline static constexpr float maxSpeed = .2f;
-	inline static constexpr float attractStrength = 0.0002f;
-
-	inline static constexpr float plantEnergy = 50.f;
-};
+#include "../settings.hpp"
 
 
 class Plant : public Entity, PlantSettings
 {
-	std::vector<Plant> nearby;
-	c_Vec collisionIndexes;
+public:
+	float energy = initialPlantEnergy;
+	unsigned vector_id = 0;
 
-	// unique spicies identifier
-	float usi;
+private:
+	std::vector<Plant> nearby;
+	c_Vec m_collisionIndexes;
+
+	float usi; // unique spicies identifier
 
 
 	void interactWithNearby(const std::vector<Plant*>& nearbyPlants)
 	{
-		collisionIndexes.size = 0;
+		m_collisionIndexes.size = 0;
 		if (nearbyPlants.empty())
 			return;
 
@@ -59,7 +34,7 @@ class Plant : public Entity, PlantSettings
 			if (plant == nullptr || plant == this || distSquared(plant->getPosition(), getPosition()) > visualRange * visualRange)
 			{ incrementer++; continue; }
 
-			collisionIndexes.add(incrementer);
+			m_collisionIndexes.add(incrementer);
 
 			float interaction = attractStrength;
 			if (abs(this->usi - plant->usi) > 2.f)
@@ -73,24 +48,33 @@ class Plant : public Entity, PlantSettings
 	}
 
 public:
-	float energy = plantEnergy;
-	sf::Color color;
-
-
 	// constructor and destructor
-	explicit Plant(const Entity& entity, const float Usi) : Entity(entity), usi(Usi)
+	explicit Plant(const Entity& entity = {}, const float Usi = 0, const unsigned Vector_id = 0) : Entity(entity), usi(Usi), vector_id(Vector_id)
 	{
 		setEntityRadius(initMass);
+	}
+
+	Plant& operator=(const Plant& other)
+	{
+		if (this == &other)
+			return *this;  // Check for self-assignment
+
+		Entity::operator=(other);
+
+		energy = other.energy;
+		nearby = other.nearby;
+		m_collisionIndexes = other.m_collisionIndexes;
+		usi = other.usi;
+
+		return *this;
 	}
 
 	static sf::Color generateColor()
 	{
 		sf::Color color = randColor(0, 100, 180, 255, 0, 100);
-		color.a = 150;
+		color.a = 150; // transparancy
 		return color;
 	}
-
-	[[nodiscard]] sf::Color getColor() const {return color;}
 
 	void updatePositioning() { updateDisplacement(); }
 
@@ -109,7 +93,6 @@ public:
 			{"radius", getRadius()},
 			{"usi", usi},
 			{"m_energy", energy},
-			{"color", {"r", color.r}, {"g", color.g}, {"b", color.b}},
 		};
 	}
 
@@ -123,7 +106,7 @@ public:
 		constexpr float va = 10.f;
 		const sf::Vector2f pos = m_positionCurrent + randVector(-va, va, -va, va);
 
-		plant->energy = plantEnergy;
+		plant->dead = false;
 		plant->m_clippingDisplacement = pos - plant->m_positionCurrent;
 		plant->updateDisplacement();
 		plant->usi = usi + randfloat(-2, 2);
@@ -133,15 +116,17 @@ public:
 	{
 		wipeEntityData();
 		age = 0;
-		energy = plantEnergy;
+		usi = 0;
+		m_collisionIndexes.size = 0;
+		energy = initialPlantEnergy;
 	}
 
 	void createRandom()
 	{
-		energy = plantEnergy;
-
 		// setting the position of the plant
 		const sf::Vector2f desiredPosition = randPosInRect(*m_border);
+
+		dead = false;
 		m_velocity = { 0.f, 0.f };
 		updatePositionWithVelocity();
 		m_clippingDisplacement = desiredPosition - m_positionCurrent;
@@ -151,11 +136,15 @@ public:
 
 	void processEntityCollisions(const std::vector<Plant*>& nearbyPlants)
 	{
-		for (unsigned int i{ 0 }; i < collisionIndexes.size; i++)
+		for (unsigned i{ 0 }; i < m_collisionIndexes.size; i++)
 		{
-			Plant* plant = nearbyPlants[collisionIndexes.at(i)];
+			Plant* plant = nearbyPlants[m_collisionIndexes.at(i)];
 			entityCollision(plant);
 		}
+
+		// todo
+		if (m_collisionIndexes.size > 5)
+			die();
 	}
 
 	void update(const std::vector<Plant*>& nearbyPlants)
@@ -169,7 +158,7 @@ public:
 
 		processEntityCollisions(nearbyPlants);
 
-		if (age > reproAge && collisionIndexes.size < reproMinCollisions)
+		if (age > reproAge && m_collisionIndexes.size < reproMinCollisions)
 			prepReproduction();
 
 		if (energy <= 0 || randint(0, randDeathChance) == 0)

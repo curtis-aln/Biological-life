@@ -14,46 +14,37 @@ void Simulation::pollEvents()
 	while (m_window.pollEvent(event))
 	{
 		if (event.type == sf::Event::Closed)
-		{
 			m_closeSim = true;
-		}
+
 		else if (event.type == sf::Event::KeyPressed)
-		{
 			keyPressEvents(event.key.code);
-		}
 
 		else if (event.type == sf::Event::MouseWheelScrolled)
-		{
 			zoom(event.mouseWheelScroll.delta);
-		}
 
 		else if (event.type == sf::Event::MouseButtonPressed)
-		{
 			m_mousePressed = true;
-		}
 
 		else if (event.type == sf::Event::MouseButtonReleased)
-		{
 			m_mousePressed = false;
-		}
 	}
 }
 
 
-void Simulation::printStatistics()
+void Simulation::updateCellStatistics()
 {
-	std::cout << "-------------------------------------------------- " << ++updateCounter << "\n";
-	std::cout << "Min Speed   : " << roundToNearestN(min_speed, 3) << "\n";
-	std::cout << "Min Nearby  : " << roundToNearestN(min_nearby, 3) << "\n";
-	std::cout << "Max Speed   : " << roundToNearestN(maxSpeed, 3) << "\n";
-	std::cout << "Total Alive : " << m_Cells.size() << " Cells, " << m_Plants.size() << " Plants" << "\n";
-	std::cout << "Total Frames: " << totalFrameCount << "\n";
-	std::cout << "Rel Frames  : " << relativeFrameCount << "\n";
-	std::cout << "Extinctions : " << totalExtinctions << "\n";
-	std::cout << "Time Passed : " << roundToNearestN(totalRunTime, 1) << " seconds \n";
-	std::cout << "            : " << roundToNearestN(totalRunTime / 60, 4) << " mins \n";
-	std::cout << "            : " << roundToNearestN((totalRunTime / 60) / 60, 4) << " hours \n";
-	std::cout << "\n";
+	float offspringSum = 0;
+	float ageSum = 0;
+
+	for (const Cell* cell : m_Cells)
+	{
+		offspringSum += static_cast<float>(cell->offspringCount);
+		ageSum += static_cast<float>(cell->getAge());
+	}
+
+	const auto size = static_cast<float>(m_Cells.size());
+	avgLifeTime.push_back(ageSum / size);
+	avgReproCount.push_back(offspringSum / size);
 }
 
 
@@ -86,6 +77,11 @@ void Simulation::keyPressEvents(const sf::Keyboard::Key& event_key_code)
 		
 		break;
 
+	case sf::Keyboard::Key::T:
+		m_thermal = not m_thermal;
+
+		break;
+
 	case sf::Keyboard::Key::V:
 		if (shifting)
 			m_debugVRangeToggle = not m_debugVRangeToggle;
@@ -113,13 +109,22 @@ void Simulation::keyPressEvents(const sf::Keyboard::Key& event_key_code)
 
 	case sf::Keyboard::Key::A:
 		if (ctrl)
+		{
 			m_autoSaving = not m_autoSaving;
+			std::cout << "AutoSaving: " << m_autoSaving;
+		}
 		break;
 
 	case sf::Keyboard::Key::S:
 		if (ctrl)
 			saveData();
 		break;
+
+	case sf::Keyboard::Key::L:
+		if (ctrl)
+			loadData();
+		break;
+
 
 
 	default:
@@ -144,7 +149,7 @@ void Simulation::renderFrame()
 		m_window.draw(m_hashGrid.m_renderGrid, getStates());
 
 	if (m_debugBorder)
-		drawRectOutline();
+		drawRectOutline(m_simBounds, m_window, getStates());
 
 	displayFrameRate(m_window, "Cellular Simulation", m_clock);
 	m_window.display();
@@ -153,24 +158,18 @@ void Simulation::renderFrame()
 
 void Simulation::debugEntities()
 {
-	for (const unsigned int index : m_Plants.getAvalableIndexes())
-	{
-		Plant& plant = m_Plants.at(index);
+	for (const Plant* plant : m_Plants)
 		debugEntity(plant, PlantSettings::visualRange, PlantSettings::initMass);
-	}
 
-	for (const unsigned int index : m_Cells.getAvalableIndexes())
-	{
-		Cell& cell = m_Cells.at(index);
-		debugEntity(cell, CellSettings::visualRange, cell.getGenomeRadius());
-	}
+	for (const Cell* cell : m_Cells)
+		debugEntity(cell, CellSettings::visualRadius, cell->getRadius());
 }
 
 
-void Simulation::debugEntity(const Entity& entity, const float vrange, const float initRad)
+void Simulation::debugEntity(const Entity* entity, const float vrange, const float initRad)
 {
 	const float rad = debugCircle.getRadius();
-	const sf::Vector2f position = entity.getPosition();
+	const sf::Vector2f position = entity->getPosition();
 
 	if (m_debugCenterToggle)
 	{
@@ -195,20 +194,17 @@ void Simulation::debugEntity(const Entity& entity, const float vrange, const flo
 	if (m_debugVelToggle)
 	{
 		// Normalize the velocity vector
-		const sf::Vector2f velocity = normaliseVector(entity.getVelocity(), 5);
-		const sf::Vector2f displacement = normaliseVector(entity.getDisplacement(), 5);
+		constexpr float normLength = 7.f;
+		const sf::Vector2f velocity = normaliseVector(entity->getVelocity(), normLength);
+		const sf::Vector2f displacement = normaliseVector(entity->getDisplacement(), normLength);
 
-		// Draw the line with the new velocity
-		const sf::VertexArray velLine = drawLine(position, position + velocity, { 0, 0, 255 });
-		m_window.draw(velLine, getStates());
-
-		const sf::VertexArray dispLine = drawLine(position, position + displacement, { 0, 255, 100 });
-		m_window.draw(dispLine, getStates());
+		m_window.draw(makeLine(position, position + velocity    , { 255, 0  , 255 }), getStates());
+		m_window.draw(makeLine(position, position + displacement, { 0, 255, 100 }), getStates());
 	}
 
 	if (m_debugClosestToggle)
 	{
-		const sf::VertexArray velLine = drawLine(position, entity.getClosestPos(), { 0, 0, 255 });
+		const sf::VertexArray velLine = makeLine(position, entity->getClosestPos(), { 0, 0, 255 });
 		m_window.draw(velLine, getStates());
 	}
 }

@@ -12,35 +12,6 @@
 #include <string>
 
 
-struct Settings
-{
-	// organic simulation settings
-	unsigned int initPlantCount;
-	unsigned int initCellCount;
-	const unsigned int FrameRate;
-
-	const bool autoExtinctionReset;
-	const bool cellCroudingDeath = false;
-
-	// graphical settings
-	sf::Vector2f windowSize;
-	const float scaleFactor;
-
-	// buffer settings
-	const unsigned int maxCells;
-	unsigned int maxPlants;
-	const unsigned int objectCirclePoints;
-
-	unsigned int minPlants;
-
-	const sf::Color windowColor;
-
-	std::string simulationName;
-	std::string fileReadWriteName;
-	sf::Vector2u hashGridCells;
-};
-
-
 struct DeltaTime
 {
 	DeltaTime()
@@ -63,30 +34,32 @@ private:
 
 class Simulation : Settings, DeltaTime, ZoomManagement
 {
-	sf::Clock m_clock{};
-
+	// ---------- borders and boundaries ---------- //
 	sf::Rect<float> m_border{ 0, 0, windowSize.x, windowSize.y }; // window space
 
 	// in the simulation we will slowly change the simbounds to a more scarce environment
 	sf::Rect<float> m_DesiredBounds{ 0, 0, windowSize.x / scaleFactor, windowSize.y / scaleFactor };
-	const float buffer = 3000.f;
-	sf::Rect<float> m_simBounds = resizeRect(m_DesiredBounds, {buffer, buffer});
+	sf::Rect<float> m_simBounds = resizeRect(m_DesiredBounds, { sim_init_buffer, sim_init_buffer });
 
 
+	// ---------- spatial hash grid ---------- //
 	sf::Vector2u hashCells = {
 		static_cast<unsigned>(static_cast<float>(hashGridCells.x) / scaleFactor),
 		static_cast<unsigned>(static_cast<float>(hashGridCells.y) / scaleFactor) };
+	SpatialHashGrid m_hashGrid{};
 
+	// ---------- SFML window ---------- //
+	sf::Clock m_clock{};
 	sf::RenderWindow m_window{sf::VideoMode(
 		static_cast<unsigned>(windowSize.x), static_cast<unsigned>(windowSize.y)), simulationName};
 
+	// ---------- Vertex Buffer ---------- //
 	Buffer m_buffer;
-	SpatialHashGrid m_hashGrid{};
 
-	o_vector<Cell>  m_Cells{};
-	o_vector<Plant> m_Plants{};
+	// ---------- containers ---------- //
+	o_vector<Cell, maxCells>   m_Cells{};
+	o_vector<Plant, maxPlants> m_Plants{};
 
-	// temporary vectors
 	std::vector<Cell*>  m_nearbyCells{};
 	std::vector<Plant*> m_nearbyPlants{};
 
@@ -100,30 +73,32 @@ class Simulation : Settings, DeltaTime, ZoomManagement
 	bool m_debugCenterToggle  = false;
 	bool m_debugVelToggle     = false;
 	bool m_debugClosestToggle = false;
-	bool m_debugBorder = false;
+	bool m_debugBorder        = false;
 
 	// ---------- runtime variables ---------- //
-	bool m_paused     = false;
-	bool m_drawGrid   = false;
-	bool m_closeSim   = false;
-	bool m_autoSaving = false;
+	bool m_paused       = false;
+	bool m_drawGrid     = false;
+	bool m_closeSim     = false;
+	bool m_autoSaving   = false;
 	bool m_frameByFrame = false;
+	bool m_thermal      = false;
 
 
 	// ---------- other statistics ---------- //
 	unsigned long long totalFrameCount = 0;
 	unsigned long long relativeFrameCount = 0;
-	unsigned int       totalExtinctions = 0;
-	unsigned int       updateCounter = 0;
-	double totalRunTime = 0;
+	unsigned           totalExtinctions = 0;
+	unsigned           updateCounter = 0;
+	double             totalRunTime = 0;
 
-	// camera movement
+	std::vector<unsigned> cellPopulation{ };
+	std::vector<unsigned> plantPopulation{ };
+	std::vector<float>    avgReproCount{ };
+	std::vector<float>    avgLifeTime{ };
+
+
+	// ---------- camera movement ---------- //
 	bool m_mousePressed = false;
-
-	// natural selection
-	float min_speed = 0.f;
-	unsigned min_nearby = 1;
-	float maxSpeed = 1.f;
 
 
 
@@ -133,12 +108,15 @@ public:
 
 
 private: // physics
-	void runFrame(double deltaTime);
+	void tickFrame();
 	void endFrame(double deltaTime);
+	void alignCells();
 	void prepGrid();
 
+	void initStatisticVariables();
 	void saveData();
-	void drawRectOutline();
+	void loadData();
+	void clearEntityData();
 
 	void updatePlants();
 	void bufferPosUpdate(const Allocations& entityAllocations, sf::Vector2f deltaPos);
@@ -146,29 +124,34 @@ private: // physics
 	
 	void prepareCells();
 	void updateCells();
-	void removeEntity(Entity& entity, unsigned relativeIndex, bool type);
 
 	template<class E>
-	void alignEntites(o_vector<E>& entities);
+	void removeEntity(E* entity, bool type);
 
-	template <class E>
-	void updateEntityPosition(o_vector<E>& entities);
+	template<class E, unsigned N>
+	void alignEntites(o_vector<E, N>& entities);
 
-	template <class E>
-	bool addEntity(o_vector<E>& entities, E& entity, bool isCell);
+	template <class E, unsigned N>
+	void updateEntityPosition(o_vector<E, N>& entities);
 
-	template <class E>
-	void addAndRemoveEntities(o_vector<E>& entities, bool isCell);
+	template <class E, unsigned N>
+	void addAndRemoveEntities(o_vector<E, N>& entities, bool isCell);
+
+	template<class E, unsigned N>
+	bool addEntity(o_vector<E, N>& entities, E* entity, const bool isCell);
+
 
 
 private: // rendering
 	void pollEvents();
 	void printStatistics();
+	void updateStatistics();
+	void updateCellStatistics();
 	void keyPressEvents(const sf::Keyboard::Key& event_key_code);
 	void renderFrame();
 
 	void debugEntities();
-	void debugEntity(const Entity& entity, float vrange, float initRad);
+	void debugEntity(const Entity* entity, float vrange, float initRad);
 
 
 private: // other
@@ -179,14 +162,14 @@ private: // other
 	void createCells();
 	void createPlants();
 
-	static int encodeEntityToId(int index, bool type);
-	void decodeEntityIds(std::vector<Cell*>& nearby_cells, std::vector<Plant*>& nearby_plants, const c_Vec& nearbyIds);
+	static int encodeEntityToId(unsigned index, bool type);
+	void decodeEntityIds(std::vector<Cell*>& nearby_cells, std::vector<Plant*>& nearby_plants, const c_Vec&
+	                     nearbyIds);
 
-	template <class E>
-	void overflowCheckEntities(o_vector<E>& entities, unsigned maxEntities, bool isCell);
+	template <class E, unsigned N>
+	void overflowCheckEntities(o_vector<E, N>& entities, unsigned maxEntities, const bool type);
 
 	void overflowProtection(unsigned maxcells, unsigned maxplants);
 	void plantUnderflowProtection(unsigned minplants);
 	void extinctionCheck();
-	void reSizeSimulation(unsigned deltaPixels);
 };
