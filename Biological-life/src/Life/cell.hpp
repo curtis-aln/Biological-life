@@ -3,40 +3,33 @@
 #include "SFML/Graphics.hpp"
 
 #include "entity.hpp"
-#include "Plant.hpp"
+#include "plant.hpp"
 #include "genome.hpp"
+#include "../settings.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <boost/functional/hash.hpp>
+#include <vector>
 
-struct CellSettings
-{
-	inline static constexpr float frictionCoefficient = 1.4f;
-	inline static constexpr float visualRange = 68;
 
-	// rate at which m_energy is transered from plant to cell
-	inline static constexpr float nutrienceRate = 2.f;
-
-	inline static constexpr int maxTimeAlone = 30;
-	inline static constexpr int reproductionDelay = 40;
-};
 
 
 class EnergyManagement
 {
 private:
-	static constexpr float K = 0.00067f;
+	static constexpr float K = 0.00054f;
 	static constexpr float reproThresh = 100.f;
-	static constexpr float diffusion = 0.01f;
 	float m_energy = initialEnergy;
 	
 protected:
 	static constexpr float initialEnergy = 50.f;
 
-	void updateEnergy(const sf::Vector2f velocity, const float mass, const unsigned int age)
+	void updateEnergy(const sf::Vector2f velocity, const float mass, const unsigned age, const unsigned nearby)
 	{
 		const float speed = abs(velocity.x) + abs(velocity.y);
-		const float deltaEnergy = (mass + speed + (static_cast<float>(age) * 0.02f)) * K;
+		const float a_age = static_cast<float>(age) * 0.01f;
+		const float deltaEnergy = (mass + speed + a_age) * K;
 		m_energy -= deltaEnergy;
 	}
 
@@ -46,47 +39,133 @@ protected:
 
 	void setEnergy(const float newEnergy) { m_energy = newEnergy; }
 
-	void energyDiffusion(EnergyManagement& otherSystem)
+	void energyDiffusion(EnergyManagement& otherSystem, const float diffusion)
 	{
 		const float delta = (otherSystem.m_energy - this->m_energy) * diffusion;
 		this->m_energy += delta;
 		otherSystem.m_energy -= delta;
+
+		if (this->m_energy < 0)
+		{
+			otherSystem.m_energy -= std::abs(this->m_energy);
+			this->m_energy = -0.1f;
+			otherSystem.m_energy += 0.1f;
+		}
+
+		else if (otherSystem.m_energy < 0)
+		{
+			this->m_energy -= std::abs(otherSystem.m_energy);
+			otherSystem.m_energy = -0.1f;
+			this->m_energy += 0.1f;
+		}
 	}
 };
 
 
-class Cell : public Entity, public Genome, CellSettings, EnergyManagement
+class Cell : public Entity, public Genome, CellSettings, EnergyManagement, Perceptron
 {
-	unsigned int m_timeAlone = 0;
-	unsigned int m_reproduceCounter = 0;
+	unsigned m_timeAlone = 0;
+	unsigned m_reproduceCounter = 0;
+
+	Cell* m_closestCell = nullptr;
+	Plant* m_closestPlant = nullptr;
+
+	float m_maxSpeed{};
+	float uniqueIdentifier{};
+
 
 public:
-	// constructor and destructor
-	explicit Cell(const Entity& entity, const Genome& genome) : Entity(entity), Genome(genome)
-	{
-		// random initial velocity
-		const float speed = getSpeedMax();
-		m_velocity = randVector(-speed, speed, -speed, speed);
+	unsigned offspringCount = 0;
+	unsigned vector_id = 0;
 
-		setEntityRadius(getGenomeRadius());
+	// constructor and destructor
+	explicit Cell(const Entity& entity = {}, const Genome& genome = Genome(), const unsigned Vector_id = 0)
+	: Entity(entity), Genome(genome), Perceptron(sensoryInputs, numHiddenLayers, hiddenLayerSize, sensoryOutputs), vector_id(Vector_id)
+	{
+		setEntityRadius(m_entityRadius);
+		uniqueIdentifier = generateUniqueIdentifier(getInputHiddenWeights());
+	}
+
+	Cell& operator=(const Cell& other)
+	{
+		if (this == &other)
+			return *this;  // Check for self-assignment
+
+		Entity::operator=(other);
+		Perceptron::operator=(other);
+
+		m_timeAlone        = other.m_timeAlone;
+		m_reproduceCounter = other.m_reproduceCounter;
+		m_closestCell      = other.m_closestCell;
+		m_closestPlant     = other.m_closestPlant;
+		m_maxSpeed         = other.m_maxSpeed;
+		uniqueIdentifier   = other.uniqueIdentifier;
+		offspringCount     = other.offspringCount;
+		return *this;
 	}
 
 	void wipeData()
 	{
 		wipeEntityData();
 		setEnergy(initialEnergy);
+		offspringCount = 0;
+		m_reproduceCounter = 0;
+		m_timeAlone = 0;
+	}
+
+
+	bool thermalToggle(const bool thermalOn)
+	{
+		if (thermalOn)
+		{
+			const auto fit = static_cast<int>(getEnergy() * 2.f);
+			const auto col = static_cast<sf::Uint8>(std::max(0, std::min(255, fit)));
+			m_color = { col, col, col, 200 };
+			return true;
+
+		}
+
+		if (thermalOn == false && m_color != m_originalColor)
+		{
+			m_color = m_originalColor;
+			return true;
+		}
+		return false;
+	}
+
+
+	void setClosestEntities(Cell* closestCell, Plant* closestPlant, const unsigned nearbyCells, const unsigned nearbyPlants)
+	{
+		m_closestCell  = closestCell;
+		m_closestPlant = closestPlant;
+		m_nearbyCells  = nearbyCells;
+		m_nearbyPlants = nearbyPlants;
+
+		setClosestPos();
 	}
 
 	nlohmann::json saveCellJson()
 	{
 		return {
-			{"entity data", saveEntityData()},
-			{"genome data", saveGenomeData()},
-			{"time alone", m_timeAlone},
+			{"entity data", saveEntityData()   },
+			{"network data", saveNetworkJson() },
+			{"time alone", m_timeAlone         },
 			{"reproduce counter", m_reproduceCounter},
-			{"radius", getRadius()},
-			{"m_energy", getEnergy()}
+			{"radius", getRadius() },
+			{"energy", getEnergy() }
 		};
+	}
+
+	void loadCellData(const nlohmann::json& cellData)
+	{
+		loadEntityData(cellData["entity data"]);
+		loadNetworkData(cellData["network data"]);
+		m_timeAlone        = cellData["time alone"];
+		m_reproduceCounter = cellData["reproduce counter"];
+		m_entityRadius     = cellData["radius"];
+		dead = false;
+
+		setEnergy(cellData["energy"]);
 	}
 
 
@@ -95,60 +174,38 @@ public:
 		// preparing this cell
 		setEnergy(getEnergy() / 2);
 		reporoduce = false;
+		offspringCount++;
 
 		constexpr float va = 3.f;
 		const sf::Vector2f pos = m_positionCurrent + randVector(-va, va, -va, va);
 
 		cell->m_velocity = m_velocity * -1.f;
-		cell->updatePosition();
-
+		cell->updatePositionWithVelocity();
 		cell->m_clippingDisplacement = (pos - cell->m_positionCurrent);
-
 		cell->setEnergy(getEnergy());
-		createMutatedClone(*cell);
+
+		cell->m_color = createMutatedColor(cell->m_color);
+		mutate(*cell);
 
 		cell->updateDisplacement();
+		cell->m_closestEntityPos = cell->m_positionCurrent;
+		cell->uniqueIdentifier = generateUniqueIdentifier(getInputHiddenWeights());
 	}
 
 
-
-	void update(const float deltaTime, Cell* closestCell, Plant* closestPlant)
+	void update()
 	{
-		cellInteraction(closestCell);
+		cellInteraction();
+		plantInteraction();
 
-		speed_limit(getSpeedMax());
+		speed_limit(m_maxSpeed);
+		m_maxSpeed = weightedOutputs[2] * 10.f;
+		applyFriction(1 + std::abs(weightedOutputs[4]));
+		collisionManagement();
 
-		// Resistance = K * (Speed^2) / Radius
-		const float speedSQ = m_velocity.x * m_velocity.x + m_velocity.y * m_velocity.y;
-		const float resitance = frictionCoefficient * speedSQ / getRadius();
-		applyFriction(1 + resitance);
-
-
-		if (closestCell != nullptr && !closestCell->isDead())
-		{
-			if (entityCollision(closestCell))
-				energyDiffusion(*closestCell);
-			m_closestEntityPos = closestCell->getPosition();
-		}
-		else
-		{
-			m_closestEntityPos = m_positionCurrent;
-		}
-
-		if (closestPlant != nullptr && !closestPlant->isDead())
-		{
-			if (entityCollision(closestPlant))
-			{
-				// transfuring nutrience
-				closestPlant->energy -= nutrienceRate;
-				setEnergy(getEnergy() + nutrienceRate);
-			}
-		}
-
-		updateEnergy(m_velocity, getRawMass(), age);
-
+		// end of function statistics update
+		updateEnergy(m_velocity, m_entityRadius, age, m_nearbyCells);
 		reproOrDeathCheck();
-
 		age++;
 	}
 
@@ -156,21 +213,56 @@ public:
 
 	void updatePositioning()
 	{
-		updatePosition();
+		updatePositionWithVelocity();
 		border();
 		updateDisplacement();
 	}
 
 
 private:
+	void setClosestPos()
+	{
+		if (validateEntityPtr(m_closestCell))
+			m_closestEntityPos = m_closestCell->getPosition();
+		else
+			m_closestEntityPos = m_positionCurrent;
+
+		applyUpriciple(m_closestEntityPos.x);
+		applyUpriciple(m_closestEntityPos.y);
+	}
+
+	void collisionManagement()
+	{
+		if (validateEntityPtr(m_closestCell))
+		{
+			if (entityCollision(m_closestCell))
+				energyDiffusion(*m_closestCell, weightedOutputs[3]);
+		}
+
+
+		if (validateEntityPtr(m_closestPlant))
+		{
+
+			if (entityCollision(m_closestPlant))
+			{
+				// transfer of nutrience upon contact
+				m_closestPlant->energy -= energyTransferRate;
+				setEnergy(getEnergy() + energyTransferRate);
+			}
+		}
+	}
+
 	void reproOrDeathCheck()
 	{
 		if (m_timeAlone > maxTimeAlone || energyDeathCheck())
 			die();
+
+		if (m_reproduceCounter < reproductionDelay)
+			m_reproduceCounter++;
 		
-		if (reproCheck(getGenomeRadius()))
+		if (reproCheck(m_entityRadius))
 		{
-			if (++m_reproduceCounter >= reproductionDelay)
+			if (m_reproduceCounter >= reproductionDelay)
 			{
 				prepReproduction();
 				m_reproduceCounter = 0;
@@ -178,18 +270,60 @@ private:
 		}
 	}
 
-
-	void cellInteraction(const Cell* closestCell)
+	void plantInteraction()
 	{
-		constexpr float minDist = (visualRange - 7) * (visualRange - 7);
-		if (closestCell == nullptr || distSquared(closestCell->getPosition(), getPosition()) > minDist)
-		{
-			m_timeAlone++;
+		if (!validateEntityPtr(m_closestPlant))
 			return;
+
+		const sf::Vector2f direction = m_closestPlant->getPosition() - this->getPosition();
+		m_velocity += direction * weightedOutputs[1]; // interaction with plant
+	}
+
+	static void applyUpriciple(float& value)
+	{
+		value += randfloat(-0.055f, 0.055f);
+	}
+
+
+	void cellInteraction()
+	{
+		// cell validation
+		if (!validateEntityPtr(m_closestCell))    { m_timeAlone++; return; }
+		const float Celldist = distSquared(m_closestEntityPos, getPosition());
+		if (Celldist > (visualRadius - 7) * (visualRadius - 7))    { m_timeAlone++; return; }
+		m_timeAlone = 0;
+
+		// calculations for the cell
+		const sf::Vector2f cellDirection = m_closestEntityPos - this->getPosition();
+		const sf::Vector2f relCellDir = m_velocity - m_closestCell->getVelocity(); // relative velocity vector direction
+		const float relativeCellSpeedSQ = relCellDir.x * relCellDir.x + relCellDir.y * relCellDir.y;
+
+		// calculations for the plant
+		float relPlantSpeed = 0; // by defualt 0
+		float PlantDist = 0;     //
+		if (validateEntityPtr(m_closestPlant))
+		{
+			const sf::Vector2f relPlantDir = m_velocity - m_closestPlant->getVelocity(); // relative velocity vector direction
+			relPlantSpeed = relPlantDir.x * relPlantDir.x + relPlantDir.y * relPlantDir.y; // relative speed
+			PlantDist = distSquared(m_closestPlant->getPosition(), getPosition()); // relative plant distance
 		}
 
-		m_timeAlone = 0;
-		const sf::Vector2f direction = closestCell->getPosition() - this->getPosition();
-		m_velocity += direction * this->calculateInteration();
+		// todo: optimize
+		// calculating the computational output
+		const std::vector inputs = {
+			Celldist             / 4000.f, // cell distance SQ
+			relativeCellSpeedSQ  / 5.f,   // direction to closest cell SQ
+			PlantDist            / 4000.f, // plant distance SQ
+			relPlantSpeed        / 5.f,   // direction to closest plant SQ
+			getEnergy()          / 100.f,  // energy levels
+			static_cast<float>(m_nearbyCells)  / 10.f, // cell count
+			static_cast<float>(m_nearbyPlants) / 10.f,  // plant count
+			std::abs(m_closestCell->uniqueIdentifier - uniqueIdentifier) // similarity relation
+		};
+	
+		this->compute_output(inputs);
+
+		m_velocity += cellDirection * weightedOutputs[0]; // interaction with cell
 	}
+
 };

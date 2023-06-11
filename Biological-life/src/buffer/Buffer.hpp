@@ -15,25 +15,25 @@
  /* An Allocations is a class that manipulates Vertices inside of the VertexBuffer */
 struct Allocations
 {
-	std::vector<unsigned int> indexes;
+	std::vector<unsigned> indexes;
 };
 
 
 class Buffer
 {
-	const unsigned int m_maxObjects;
-	const unsigned int m_ObjectPoints;
-	const unsigned int m_verticesMultiplier;
+	const unsigned m_maxObjects;
+	const unsigned m_ObjectPoints;
+	const unsigned m_verticesMultiplier;
 	const double PI = 3.14159265358979;
 
-	unsigned int m_totalExpectedVertices;
+	unsigned m_totalExpectedVertices;
 
 	sf::VertexBuffer m_VertexBuffer;
 	std::vector<sf::Vertex> m_vertices;
-	std::vector<unsigned int> m_verticesIndexes;
+	std::vector<unsigned> m_verticesIndexes;
 
 	// variable used for keeping track of all of the allocations issued and recived
-	unsigned int m_allocationsIssued = 0;
+	unsigned m_allocationsIssued = 0;
 
 
 public:
@@ -66,10 +66,10 @@ private:
 	[[nodiscard]] std::vector<sf::Vertex> createTriangleVertices(float radius, sf::Vector2f position) const;
 	[[nodiscard]] std::vector<sf::Vertex> createSquare(sf::Vector2f position, float size) const;
 	[[nodiscard]] std::vector<sf::Vertex> createTriangleAroundPoint(sf::Vector2f position, float size) const;
-	[[nodiscard]] sf::Vector2f idxToCoords(unsigned int idx, float radius) const;
-	[[nodiscard]] unsigned int scaleIndex(unsigned int index, bool scaleUp) const;
-	[[nodiscard]] static sf::PrimitiveType getPrimitiveType(unsigned int objectPoints);
-	[[nodiscard]] static unsigned int getMultiplier(unsigned int objectPoints);
-	[[nodiscard]] unsigned int getNextIndex();
+	[[nodiscard]] sf::Vector2f idxToCoords(unsigned idx, float radius) const;
+	[[nodiscard]] unsigned scaleIndex(unsigned index, bool scaleUp) const;
+	[[nodiscard]] static sf::PrimitiveType getPrimitiveType(unsigned objectPoints);
+	[[nodiscard]] static unsigned getMultiplier(unsigned objectPoints);
+	[[nodiscard]] unsigned getNextIndex();
 };
 

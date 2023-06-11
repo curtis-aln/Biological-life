@@ -117,7 +117,7 @@ struct SpatialHashGrid
 		const sf::Vector2<uint32_t> cIdx = posTo2dIdx(pos);
 
 		if (!checkValidIndex(cIdx))
-			throw std::out_of_range("find() position argument out of range");
+			throw std::out_of_range("position argument out of range");
 
 		const uint32_t idx = idx2dTo1d(cIdx);
 		m_cells[idx].addAtom(atom);
@@ -173,13 +173,13 @@ struct SpatialHashGrid
 
 	void initVertexBuffer()
 	{
-		std::vector<sf::Vertex> vertices(static_cast<std::vector<sf::Vertex>::size_type>((m_cellsXY.x + m_cellsXY.y) * 2));
+		std::vector<sf::Vertex> vertices(static_cast<std::vector<sf::Vertex>::size_type>((m_cellsXY.x + m_cellsXY.y) * 2) + 10);
 
 		m_renderGrid = sf::VertexBuffer(sf::Lines, sf::VertexBuffer::Static);
 		m_renderGrid.create(vertices.size());
 
 		size_t counter = 0;
-		for (unsigned i = 0; i < m_cellsXY.x; i++)
+		for (unsigned i = 0; i <= m_cellsXY.x; i++)
 		{
 			const float posX = static_cast<float>(i) * m_cellDimensions.x;
 			vertices[counter].position = { posX, 0 };
@@ -187,7 +187,7 @@ struct SpatialHashGrid
 			counter += 2;
 		}
 
-		for (unsigned i = 0; i < m_cellsXY.y; i++)
+		for (unsigned i = 0; i <= m_cellsXY.y; i++)
 		{
 			const float posY = static_cast<float>(i) * m_cellDimensions.y;
 			vertices[counter].position = { 0, posY };

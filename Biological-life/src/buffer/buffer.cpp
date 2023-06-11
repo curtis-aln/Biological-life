@@ -15,7 +15,7 @@ Buffer::Buffer(const unsigned maxObjects, const unsigned objectPoints, const sf:
 	m_vertices.resize(m_totalExpectedVertices, sf::Vertex());
 
 	// vertices indexes are relative to the actual Allocations, meaning 1 index will hold info for (objectPoints * 3) Vertices
-	m_verticesIndexes = std::vector<unsigned int>(m_maxObjects);
+	m_verticesIndexes = std::vector<unsigned>(m_maxObjects);
 	std::iota(m_verticesIndexes.begin(), m_verticesIndexes.end(), 0);
 
 
@@ -25,7 +25,7 @@ Buffer::Buffer(const unsigned maxObjects, const unsigned objectPoints, const sf:
 
 Allocations Buffer::handleOnePointPrimitive(const sf::Vector2f position, const sf::Color color)
 {
-	const unsigned int index = getNextIndex();
+	const unsigned index = getNextIndex();
 	m_vertices[index].position = position;
 	m_vertices[index].color = color;
 	return Allocations{ {index} };
@@ -100,10 +100,10 @@ Allocations Buffer::add(const sf::Vector2f position, const float radius, const s
 
 void Buffer::addToVertexVector(Allocations& object, const sf::Color color, const std::vector<sf::Vertex>& vertices)
 {
-	const unsigned int startIndex = getNextIndex();
+	const unsigned startIndex = getNextIndex();
 	object.indexes.resize(vertices.size());
 
-	for (unsigned int i = 0; i < vertices.size(); i++)
+	for (unsigned i = 0; i < vertices.size(); i++)
 	{
 		m_vertices[startIndex + i].position = vertices[i].position;
 		m_vertices[startIndex + i].color = color;
@@ -114,13 +114,13 @@ void Buffer::addToVertexVector(Allocations& object, const sf::Color color, const
 
 void Buffer::remove(const Allocations* object)
 {
-	const unsigned int objectMinIndex = object->indexes[0];
+	const unsigned objectMinIndex = object->indexes[0];
 
 	// freeing up a new index to be used
 	m_verticesIndexes.push_back(scaleIndex(objectMinIndex, false));
 
 	// "removing" the indexes from the Buffer by making it invisible
-	for (const unsigned int index : object->indexes)
+	for (const unsigned index : object->indexes)
 	{
 		m_vertices[index].color = sf::Color(0, 0, 0, 0);
 	}
@@ -143,7 +143,7 @@ void Buffer::update()
 
 void Buffer::setVertexPositions(const Allocations& allocations, const sf::Vector2f deltaPosition)
 {
-	for (const unsigned int index : allocations.indexes)
+	for (const unsigned index : allocations.indexes)
 	{
 		m_vertices[index].position += deltaPosition;
 	}
@@ -158,7 +158,7 @@ void Buffer::scaleObject(const Allocations& allocations, const sf::Vector2f cent
 
 void Buffer::setColor(const Allocations& allocations, const sf::Color newColor)
 {
-	for (const unsigned int index : allocations.indexes)
+	for (const unsigned index : allocations.indexes)
 	{
 		m_vertices[index].color = newColor;
 	}
@@ -169,8 +169,8 @@ std::vector<sf::Vertex> Buffer::createTriangleVertices(const float radius, const
 {
 	std::vector<sf::Vertex> triangles(static_cast<int>(m_ObjectPoints * 3));
 
-	unsigned int index = 0;
-	for (unsigned int i = 0; i < m_ObjectPoints; i++)
+	unsigned index = 0;
+	for (unsigned i = 0; i < m_ObjectPoints; i++)
 	{
 		triangles[index + 0] = sf::Vertex({ position + idxToCoords(i + 0, radius) }); // vertex 1
 		triangles[index + 1] = sf::Vertex({ position + idxToCoords(i + 1, radius) }); // vertex 2
@@ -248,13 +248,13 @@ unsigned Buffer::scaleIndex(const unsigned index, const bool scaleUp) const
 {
 	// false = scale down, true = scale up.
 	// this function is used to convert indexes from the m_vertices and m_verticesIndexes containers
-	const unsigned int scaleFactor = m_ObjectPoints * m_verticesMultiplier;
+	const unsigned scaleFactor = m_ObjectPoints * m_verticesMultiplier;
 	if (scaleUp)
 		return index * scaleFactor;
 	return index / scaleFactor;
 }
 
-sf::PrimitiveType Buffer::getPrimitiveType(const unsigned int objectPoints)
+sf::PrimitiveType Buffer::getPrimitiveType(const unsigned objectPoints)
 {
 	if (objectPoints == 1)
 		return sf::PrimitiveType::Points;
@@ -268,16 +268,16 @@ sf::PrimitiveType Buffer::getPrimitiveType(const unsigned int objectPoints)
 	return sf::PrimitiveType::Triangles;
 }
 
-unsigned Buffer::getMultiplier(const unsigned int objectPoints)
+unsigned Buffer::getMultiplier(const unsigned objectPoints)
 {
 	if (objectPoints == 1 || objectPoints == 2 || objectPoints == 4)
 		return 1;
 	return 3;
 }
 
-unsigned int Buffer::getNextIndex()
+unsigned Buffer::getNextIndex()
 {
-	const unsigned int index = scaleIndex(m_verticesIndexes.back(), true);
+	const unsigned index = scaleIndex(m_verticesIndexes.back(), true);
 	m_verticesIndexes.pop_back();
 	return index;
 }

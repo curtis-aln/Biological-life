@@ -12,39 +12,69 @@ class Entity : public Allocations
 {
 
 protected:
-	sf::Vector2f m_positionBefore;
-	sf::Vector2f m_positionCurrent;
+	sf::Vector2f m_positionBefore{};
+	sf::Vector2f m_positionCurrent{};
 
 	sf::Vector2f m_closestEntityPos{};
 
-	sf::Vector2f m_velocity;
-	sf::Vector2f m_clippingDisplacement;
-	sf::Vector2f m_deltaPos;
+	sf::Vector2f m_velocity{};
+	sf::Vector2f m_clippingDisplacement{};
+	sf::Vector2f m_deltaPos{};
 
-	const sf::Rect<float> m_border;
-
-	float m_entityRadius;
+	const sf::Rect<float>* m_border{};
+	float m_entityRadius{};
 
 	bool dead = false;
 	bool reporoduce = false;
 
+	// coloring
+	sf::Color m_color{};
+	sf::Color m_originalColor{};
+
 
 public:
-	Entity(const Allocations& object, const sf::Rect<float> border)
-	: Allocations(object), m_border(border)
+	unsigned m_nearbyCells = 0;
+	unsigned m_nearbyPlants = 0;
+
+	Entity(const Allocations& object = {}, const sf::Rect<float>* border = {}, const sf::Color& color = {}, const float radius = 0)
+	: Allocations(object), m_border(border), m_entityRadius(radius), m_color(color), m_originalColor(color)
 	{
-		
 	}
 
-	[[nodiscard]] sf::Vector2f getPosition() const { return m_positionCurrent; }
-	[[nodiscard]] sf::Vector2f getClosestPos() const { return m_closestEntityPos; }
-	[[nodiscard]] sf::Vector2f getVelocity() const { return m_positionCurrent - m_positionBefore; }
-	[[nodiscard]] sf::Vector2f  getDeltaPos() const { return m_deltaPos; }
-	[[nodiscard]] sf::Vector2f  getDisplacement() const { return m_clippingDisplacement; }
+	Entity& operator=(const Entity& other)
+	{
+		if (this == &other)
+			return *this;  // Check for self-assignment
+
+		m_positionBefore   = other.m_positionBefore;
+		m_positionCurrent  = other.m_positionCurrent;
+		m_closestEntityPos = other.m_closestEntityPos;
+		m_velocity         = other.m_velocity;
+		m_clippingDisplacement = other.m_clippingDisplacement;
+		m_deltaPos     = other.m_deltaPos;
+		m_border       = other.m_border;
+		m_entityRadius = other.m_entityRadius;
+		dead           = other.dead;
+		reporoduce     = other.reporoduce;
+		m_color        = other.m_color;
+		m_originalColor= other.m_originalColor;
+		m_nearbyCells  = other.m_nearbyCells;
+		m_nearbyPlants = other.m_nearbyPlants;
+
+		return *this;
+	}
+
+	static bool validateEntityPtr(const Entity* entityPtr) { return entityPtr != nullptr && entityPtr->isDead() == false; }
+
+	[[nodiscard]] sf::Vector2f getPosition()     const { return m_positionCurrent; }
+	[[nodiscard]] sf::Vector2f getClosestPos()   const { return m_closestEntityPos; }
+	[[nodiscard]] sf::Vector2f getVelocity()     const { return m_positionCurrent - m_positionBefore; }
+	[[nodiscard]] sf::Vector2f getDeltaPos()     const { return m_deltaPos; }
+	[[nodiscard]] sf::Vector2f getDisplacement() const { return m_clippingDisplacement; }
 	[[nodiscard]] bool isDead() const { return dead; }
 	[[nodiscard]] bool shouldReproduce() const { return reporoduce; }
 
-	void setPosition(const sf::Vector2f newPosition)
+	void setEntityPosition(const sf::Vector2f newPosition)
 	{
 		m_positionBefore = newPosition;
 		m_positionCurrent = newPosition;
@@ -52,35 +82,48 @@ public:
 	}
 
 	void setEntityRadius(const float radius) { m_entityRadius = radius; }
-	float getRadius() const { return m_entityRadius; }
+	void die() { dead = true; }
+	[[nodiscard]] float getRadius() const { return m_entityRadius; }
+	[[nodiscard]] unsigned getAge() const { return age; }
+	[[nodiscard]] sf::Color getColor() const { return m_color; }
 
 
-	nlohmann::json saveEntityData()
+	[[nodiscard]] nlohmann::json saveEntityData() const
 	{
 		return {
-			{"position before", {"x", m_positionBefore.x, "y", m_positionBefore.y}},
-			{"position current", {"x", m_positionCurrent.x, "y", m_positionCurrent.y}},
-			{"velocity", {"x", m_velocity.x, "y", m_velocity.y}},
+			{"position before",  vectorToJson(m_positionBefore)},
+			{"position current", vectorToJson(m_positionCurrent)},
+			{"velocity",         vectorToJson(m_velocity)},
+			{"color", colorToJson(m_color)}
 		};
 	}
 
-	void die() { dead = true; }
+	void loadEntityData(const nlohmann::json& entityData)
+	{
+		m_positionBefore = jsonToVector(entityData["position before"]);
+		m_positionCurrent= jsonToVector(entityData["position current"]);
+		m_velocity       = jsonToVector(entityData["velocity"]);
+		m_color          = jsonToColor(entityData["color"]);
+	}
+
+	
 
 protected:
-	unsigned int age = 0;
+	unsigned age = 0;
 
 	void wipeEntityData()
 	{
 		age = 0;
-		dead = false;
+		dead = true;
 		reporoduce = false;
 		m_velocity = { 0, 0 };
 		m_clippingDisplacement = { 0, 0 };
 	}
 
 	void prepReproduction() { reporoduce = true; }
+	void applyFriction(const float strength) { m_velocity /= strength; }
 
-	void updatePosition()
+	void updatePositionWithVelocity()
 	{
 		m_positionBefore = m_positionCurrent;
 		m_positionCurrent += m_velocity;
@@ -97,12 +140,6 @@ protected:
 
 		m_deltaPos = m_velocity + originalDisp + deltaDisp;
 		m_clippingDisplacement = { 0, 0 };
-	}
-
-
-	void applyFriction(const float strength)
-	{
-		m_velocity /= strength;
 	}
 
 
@@ -125,6 +162,7 @@ protected:
 		// Move the entities to prevent them from interpenetrating
 		m_clippingDisplacement -= correction * (thisRad / sum_radii);
 		entity->m_clippingDisplacement += correction * (otherRad / sum_radii);
+
 		return true;
 	}
 
@@ -134,8 +172,8 @@ protected:
 	{
 		const float radius = getRadius();
 		const sf::Vector2f desiredPos = {
-			std::max(m_border.left + radius, std::min(m_positionCurrent.x, m_border.left + m_border.width - radius)),
-			std::max(m_border.top + radius, std::min(m_positionCurrent.y, m_border.top + m_border.height - radius))
+			std::max(m_border->left + radius, std::min(m_positionCurrent.x, m_border->left + m_border->width - radius)),
+			std::max(m_border->top + radius, std::min(m_positionCurrent.y, m_border->top + m_border->height - radius))
 		};
 		m_clippingDisplacement += desiredPos - m_positionCurrent;
 	}
@@ -146,16 +184,16 @@ protected:
 		const float radius = getRadius();
 		constexpr float buffer = 30.f;
 		constexpr float repel = 0.02f;
-		if (m_border.left + radius + buffer > m_positionCurrent.x)
+		if (m_border->left + radius + buffer > m_positionCurrent.x)
 			m_velocity.x += repel;
 
-		else if (m_border.left + m_border.width - (radius + buffer) < m_positionCurrent.x)
+		else if (m_border->left + m_border->width - (radius + buffer) < m_positionCurrent.x)
 			m_velocity.x -= repel;
 
-		if (m_border.top + radius + buffer > m_positionCurrent.y)
+		if (m_border->top + radius + buffer > m_positionCurrent.y)
 			m_velocity.y += repel;
 
-		else if (m_border.top + m_border.height - (radius + buffer) < m_positionCurrent.y)
+		else if (m_border->top + m_border->height - (radius + buffer) < m_positionCurrent.y)
 			m_velocity.y -= repel;
 	}
 
@@ -176,7 +214,7 @@ protected:
 
 
 template <class T>
-T* filterAndProcessNearby(const sf::Vector2f position, std::vector<T*>& entities, const float visualRange, const float radius)
+T* filterAndProcessNearby(const sf::Vector2f position, std::vector<T*>& entities, const float visualRange, const float radius, unsigned& closeCounter)
 {
 	/* in this function we will find the closest cell to this current cell, while doing that we will also preform collision detection
 	 */
@@ -192,6 +230,8 @@ T* filterAndProcessNearby(const sf::Vector2f position, std::vector<T*>& entities
 
 		const float localDiam = radius + otherEntity->getRadius();
 		const float distSq = lengthSquared(otherPos - position) - (localDiam * localDiam);
+
+		if (distSq < visualRange * visualRange) closeCounter++;
 
 		if (distSq < closestDistSq)
 		{
